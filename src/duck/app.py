@@ -24,12 +24,19 @@ def get_current_user():
     user_id = session.get('user_id')
     if not user_id:
         return None
-    return db.get_user_by_id(user_id)
+    user = db.get_user_by_id(user_id)
+    if not user:
+        session.pop('user_id', None)
+        session.pop('user_name', None)
+        session.pop('user_email', None)
+        return None
+    return user
 
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
+        user = get_current_user()
+        if not user:
             if request.is_json or request.path.startswith('/api/'):
                 return jsonify({"error": "Требуется авторизация"}), 401
             return redirect(url_for('login_page', next=request.url))
@@ -62,14 +69,16 @@ def index():
 
 @app.route("/login")
 def login_page():
-    if 'user_id' in session:
+    user = get_current_user()
+    if user:
         return redirect(url_for('dashboard_page'))
     return render_template('login.html')
 
 @app.route("/registration")
 @app.route("/register")
 def registration():
-    if 'user_id' in session:
+    user = get_current_user()
+    if user:
         return redirect(url_for('dashboard_page'))
     return render_template('registration.html')
 
@@ -83,10 +92,12 @@ def welcome_page():
 @login_required
 def dashboard_page():
     user = get_current_user()
-    models = db.get_all_models()
-    api_keys = db.get_user_api_keys(user['id'])
-    transactions = db.get_user_transactions(user['id'], limit=30)
-    stats = db.get_user_stats(user['id'])
+    if not user:
+        return redirect(url_for('login_page'))
+    models = db.get_all_models() or []
+    api_keys = db.get_user_api_keys(user['id']) or []
+    transactions = db.get_user_transactions(user['id'], limit=30) or []
+    stats = db.get_user_stats(user['id']) or {}
     return render_template('dashboard.html', user=user, models=models, api_keys=api_keys, transactions=transactions, stats=stats)
 
 @app.route("/pricing")
