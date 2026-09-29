@@ -335,19 +335,15 @@ def list_models():
     return jsonify({"models": models})
 
 def generate_ai_response_mock(model_slug: str, prompt: str, system_prompt: str = ""):
-    # Realistic latency simulation based on model type
     model_lower = model_slug.lower()
+    p_lower = prompt.lower().strip()
     
-    # Prompt analysis to generate rich contextual answer
-    p_lower = prompt.lower()
-    
+    # 1. Image generation
     if "image" in model_lower or "flux" in model_lower or "midjourney" in model_lower or "dall-e" in model_lower:
-        # Image generation output
         image_seeds = [
             "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=80",
             "https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?auto=format&fit=crop&w=1000&q=80",
-            "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&w=1000&q=80",
-            "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=80"
+            "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&w=1000&q=80"
         ]
         chosen_img = random.choice(image_seeds)
         return {
@@ -357,105 +353,133 @@ def generate_ai_response_mock(model_slug: str, prompt: str, system_prompt: str =
             "prompt_tokens": len(prompt.split()) * 2,
             "completion_tokens": 100
         }
-    
-    if "code" in model_lower or "coder" in model_lower or "python" in p_lower or "код" in p_lower or "function" in p_lower or "скрипт" in p_lower:
-        code_resp = f"""Вот оптимизированное решение на Python с использованием лучших практик:
+
+    # 2. Historical / Philosophical / Political comparisons (e.g. "ты за гитлера или сталина")
+    if ("гитлер" in p_lower and "сталин" in p_lower) or ("гитлера" in p_lower or "сталина" in p_lower and "за" in p_lower):
+        resp = """Как искусственный интеллект, я не занимаю идеологических сторон и оцениваю исторические фигуры и режимы на основе фактов и общепризнанных оценок исторической науки.
+
+1. **Адольф Гитлер и нацистский режим:**
+   • Развязал Вторую мировую войну — самый кровопролитный конфликт в истории человечества.
+   • Организовал Холокост и планомерный геноцид миллионов людей по расовым и национальным признакам.
+   • Идеология нацизма осуждена Нюрнбергским трибуналом и мировым сообществом как человеконенавистническая и преступная.
+
+2. **Иосиф Сталин и советский период:**
+   • Руководил СССР в период индустриализации и победы в Великой Отечественной войне над нацистской Германией.
+   • В то же время его правление сопровождалось масштабными политическими репрессиями, системой ГУЛАГа, депортациями народов и форсированной коллективизацией с тяжелыми человеческими жертвами.
+
+**Вывод:**
+Обе эти исторические эпохи связаны с колоссальными человеческими трагедиями, тоталитарным контролем и насилием. Современное понимание этики и прав человека отвергает подобные режимы и ставит высшей ценностью человеческую жизнь, свободу и демократические институты."""
+        return {
+            "type": "text",
+            "text": resp,
+            "prompt_tokens": max(15, len(prompt.split()) * 2),
+            "completion_tokens": len(resp.split()) * 2
+        }
+
+    # 3. Coding and Technical Prompts
+    if any(w in p_lower for w in ["код", "code", "python", "javascript", "sql", "скрипт", "функция", "function", "напиши на", "алгоритм"]):
+        code_resp = f"""Вот качественное и оптимизированное решение на Python с обработкой ошибок и типизацией:
 
 ```python
 import asyncio
-import aiohttp
 from typing import List, Dict, Any
 
-class NeuroAPIClient:
-    def __init__(self, api_key: str, base_url: str = "https://api.neuroapi.io/v1"):
-        self.api_key = api_key
-        self.base_url = base_url
-        self.headers = {{
-            "Authorization": f"Bearer {{self.api_key}}",
-            "Content-Type": "application/json"
-        }}
-
-    async def generate_completion(self, model: str, prompt: str) -> Dict[str, Any]:
-        async with aiohttp.ClientSession() as session:
-            payload = {{
-                "model": model,
-                "messages": [{{"role": "user", "content": prompt}}],
-                "temperature": 0.7
-            }}
-            async with session.post(f"{{self.base_url}}/chat/completions", json=payload, headers=self.headers) as resp:
-                return await resp.json()
+async def process_data(items: List[Dict[str, Any]]) -> Dict[str, Any]:
+    \"\"\"
+    Асинхронная обработка входящих данных с валидацией.
+    \"\"\"
+    results = []
+    for item in items:
+        if not item.get("id"):
+            continue
+        # Трансформация и расчет
+        processed = {
+            "id": item["id"],
+            "status": "completed",
+            "score": round(item.get("value", 0) * 1.15, 2)
+        }
+        results.append(processed)
+    
+    return {
+        "total_processed": len(results),
+        "data": results
+    }
 
 # Пример использования:
 async def main():
-    client = NeuroAPIClient(api_key="sk-neuro-sample-key")
-    response = await client.generate_completion(
-        model="{model_slug}",
-        prompt="{prompt[:60]}..."
-    )
-    print("Ответ нейросети:", response)
+    sample_payload = [
+        {"id": 1, "value": 100},
+        {"id": 2, "value": 250}
+    ]
+    res = await process_data(sample_payload)
+    print("Результат обработки:", res)
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### Ключевые преимущества этого решения:
-1. **Асинхронность**: Обработка сотен запросов без блокировки основного потока.
-2. **Типизация**: Строгая валидация входящих и исходящих данных.
-3. **Обработка ошибок**: Готовность к продакшн-нагрузкам.
-"""
+### Основные особенности реализации:
+1. **Асинхронность (`async/await`)**: Обеспечивает масштабируемость и высокую скорость работы.
+2. **Типизация (`type hints`)**: Упрощает поддержку и отладку кода.
+3. **Безопасность**: Защита от отсутствующих ключей через `.get()`."""
         return {
             "type": "text",
             "text": code_resp,
             "prompt_tokens": max(15, len(prompt.split()) * 2),
-            "completion_tokens": 280
+            "completion_tokens": 260
         }
-        
+
+    # 4. Reasoning / Thinking Models (DeepSeek R1, o1)
     if "deepseek-reasoner" in model_lower or "o1" in model_lower or "reasoning" in model_lower:
-        cot = f"""<think>
-1. Анализ запроса пользователя: "{prompt}".
-2. Выделение ключевых аспектов, терминов и целевого результата.
-3. Оценка архитектурных альтернатив и возможных краевых случаев.
-4. Синтез подробного структурированного ответа с практическими рекомендациями.
+        cot_resp = f"""<think>
+1. Анализ пользовательского запроса: «{prompt}».
+2. Определение ключевых концепций, контекста и целевой аудитории.
+3. Систематизация фактов, аргументов и причинно-следственных связей.
+4. Формирование исчерпывающего и логически выверенного ответа.
 </think>
 
 ### Аналитический ответ модели {model_slug}:
 
 В ответ на ваш запрос: **«{prompt}»**
 
-1. **Суть концепции и архитектура:**
-   При работе с распределенными AI-системами и LLM критически важно минимизировать задержку (latency) и контролировать расход токенов. Использование единого API-шлюза обеспечивает маршрутизацию запросов с балансировкой нагрузки и автоматическим failover.
+1. **Суть концепции и ключевые факторы:**
+   Для решения поставленной задачи требуется учитывать системные ограничения, структуру взаимосвязей и приоритеты эффективности.
 
-2. **Пошаговый план реализации:**
-   - **Шаг 1:** Интеграция API ключа через переменные окружения (`NEURO_API_KEY`).
-   - **Шаг 2:** Настройка пула сессий для HTTP Keep-Alive соединений.
-   - **Шаг 3:** Кэширование частых запросов (Embeddings / Redis) для экономии баланса до 40%.
+2. **Практические рекомендации и структура:**
+   • **Первичный анализ**: Формулировка требований и определение метрик успеха.
+   • **Инструменты и реализация**: Использование проверенных подходов и современных библиотек.
+   • **Оптимизация**: Минимизация накладных расходов и контроль качества.
 
-3. **Результат и вывод:**
-   Данная конфигурация гарантирует максимальную пропускную способность до 15 000 токенов/сек при стабильном пинге ~120мс."""
+3. **Итоговый вывод:**
+   Предложенный подход позволяет достичь максимального результата с наименьшими издержками."""
         return {
             "type": "text",
-            "text": cot,
+            "text": cot_resp,
             "prompt_tokens": max(20, len(prompt.split()) * 2),
-            "completion_tokens": 340
+            "completion_tokens": 310
         }
-        
-    # Default text completion
-    sample_text = f"""Здравствуйте! Я модель **{model_slug}**, подключенная через NeuroAPI.
 
-По вашему запросу: *«{prompt}»*
+    # 5. General intelligent answers
+    general_answer = f"""По вашему запросу: **«{prompt}»**
 
-Нейросеть успешно обработала контекст и сформировала детальный ответ:
-• **Высокая точность**: Полное сохранение смысла и требований промпта.
-• **Скорость отклика**: Запрос обработан на графических кластерах NVIDIA H100.
-• **Готовность к интеграции**: Вы можете отправить аналогичный запрос через SDK на Python, Node.js или cURL.
+### Ответ модели {model_slug}:
 
-Если вам требуется доработать ответ или сгенерировать программный код, просто укажите дополнительные параметры в промпте!"""
+1. **Главная суть:**
+   Рассматриваемый вопрос охватывает несколько важных аспектов, требующих структурированного подхода. При решении подобных задач ключевое значение имеют точность формулировок и опора на проверенные данные.
+
+2. **Практические аспекты:**
+   • Системный подход и разбиение задачи на понятные подэтапы.
+   • Проверка исходных условий и валидация полученных результатов.
+   • Гибкость и возможность адаптации решения под индивидуальные требования.
+
+3. **Резюме:**
+   Если вам требуется детальный разбор конкретного пункта, уточните детали или задайте следующий вопрос!"""
 
     return {
         "type": "text",
-        "text": sample_text,
+        "text": general_answer,
         "prompt_tokens": max(12, len(prompt.split()) * 2),
-        "completion_tokens": 160
+        "completion_tokens": 180
     }
 
 @app.route('/api/playground/generate', methods=['POST'])
