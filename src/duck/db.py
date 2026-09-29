@@ -2,6 +2,7 @@ import os
 import hashlib
 import secrets
 import sqlite3
+import traceback
 from typing import Optional, Dict, Any, List
 
 # Original MySQL Database Configuration
@@ -11,12 +12,11 @@ DB_CONFIG = {
     "database": "sch688_vvedenie",
     "user": "sch688_vvedenie",
     "password": "Qwerty123",
-    "connection_timeout": 5
+    "connection_timeout": 5,
+    "autocommit": True
 }
 
 SQLITE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "neuroapi.db")
-
-_use_mysql = None
 
 def get_mysql_connection():
     try:
@@ -24,88 +24,57 @@ def get_mysql_connection():
         cnx = mysql.connector.connect(**DB_CONFIG)
         if cnx.is_connected():
             return cnx
-    except Exception:
+    except ImportError:
+        print("[DB WARNING] mysql-connector-python не установлен в текущем venv! Установите: pip install mysql-connector-python")
+        return None
+    except Exception as e:
+        print(f"[DB WARNING] Не удалось подключиться к MySQL 185.114.247.43: {e}")
         return None
     return None
-
-def is_mysql_available() -> bool:
-    global _use_mysql
-    if _use_mysql is not None:
-        return _use_mysql
-    cnx = get_mysql_connection()
-    if cnx:
-        _use_mysql = True
-        cnx.close()
-    else:
-        _use_mysql = False
-    return _use_mysql
-
-def get_db():
-    if is_mysql_available():
-        cnx = get_mysql_connection()
-        if cnx:
-            return "mysql", cnx
-    
-    # Fallback SQLite
-    os.makedirs(os.path.dirname(SQLITE_PATH), exist_ok=True)
-    conn = sqlite3.connect(SQLITE_PATH)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
-    return "sqlite", conn
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 def generate_api_key() -> str:
-    random_part = secrets.token_hex(20)
-    return f"sk-neuro-{random_part}"
+    return f"sk-neuro-{secrets.token_hex(20)}"
 
 def init_db():
-    db_type, conn = get_db()
-    
-    if db_type == "mysql":
+    print(f"[DB] Инициализация базы данных... Пробуем подключиться к MySQL {DB_CONFIG['host']}:{DB_CONFIG['port']} (БД: {DB_CONFIG['database']})...")
+    cnx = get_mysql_connection()
+    if cnx:
+        print(f"[DB SUCCESS] Подключено к оригинальной MySQL базе данных `{DB_CONFIG['database']}` на сервере {DB_CONFIG['host']}!")
         try:
-            cur = conn.cursor(dictionary=True)
-            
-            # Ensure users table exists with all needed fields
+            cur = cnx.cursor(dictionary=True)
+            # Create/ensure tables exist
             cur.execute("""
             CREATE TABLE IF NOT EXISTS `users` (
                 `id` INT AUTO_INCREMENT PRIMARY KEY,
                 `username` VARCHAR(255) NOT NULL,
                 `email` VARCHAR(255) NOT NULL UNIQUE,
-                `password_hash` VARCHAR(255) NOT NULL,
-                `balance` DOUBLE NOT NULL DEFAULT 150.0,
-                `total_spent` DOUBLE NOT NULL DEFAULT 0.0,
-                `total_deposited` DOUBLE NOT NULL DEFAULT 0.0,
-                `tier` VARCHAR(50) DEFAULT 'Developer',
-                `avatar_color` VARCHAR(20) DEFAULT '#6366f1',
-                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                `password_hash` VARCHAR(255) NOT NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
-            
-            # Check if columns balance etc exist in users, if not add them
+
+            # Try to add optional columns if possible
             cur.execute("DESCRIBE `users`")
             existing_cols = [row['Field'] for row in cur.fetchall()]
-            
-            if 'balance' not in existing_cols:
-                try: cur.execute("ALTER TABLE `users` ADD COLUMN `balance` DOUBLE NOT NULL DEFAULT 150.0")
-                except Exception: pass
-            if 'total_spent' not in existing_cols:
-                try: cur.execute("ALTER TABLE `users` ADD COLUMN `total_spent` DOUBLE NOT NULL DEFAULT 0.0")
-                except Exception: pass
-            if 'total_deposited' not in existing_cols:
-                try: cur.execute("ALTER TABLE `users` ADD COLUMN `total_deposited` DOUBLE NOT NULL DEFAULT 0.0")
-                except Exception: pass
-            if 'tier' not in existing_cols:
-                try: cur.execute("ALTER TABLE `users` ADD COLUMN `tier` VARCHAR(50) DEFAULT 'Developer'")
-                except Exception: pass
-            if 'avatar_color' not in existing_cols:
-                try: cur.execute("ALTER TABLE `users` ADD COLUMN `avatar_color` VARCHAR(20) DEFAULT '#6366f1'")
-                except Exception: pass
-            if 'created_at' not in existing_cols:
-                try: cur.execute("ALTER TABLE `users` ADD COLUMN `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-                except Exception: pass
+            for col, col_type in [('balance', 'DOUBLE DEFAULT 150.0'), ('total_spent', 'DOUBLE DEFAULT 0.0'), ('total_deposited', 'DOUBLE DEFAULT 0.0')]:
+                if col not in existing_cols:
+                    try:
+                        cur.execute(f"ALTER TABLE `users` ADD COLUMN `{col}` {col_type}")
+                    except Exception:
+                        pass
+
+            # Create auxiliary tables for balance and API
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS `user_balances` (
+                `user_id` INT PRIMARY KEY,
+                `email` VARCHAR(255) NOT NULL,
+                `balance` DOUBLE NOT NULL DEFAULT 150.0,
+                `total_spent` DOUBLE NOT NULL DEFAULT 0.0,
+                `total_deposited` DOUBLE NOT NULL DEFAULT 0.0
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+            """)
 
             cur.execute("""
             CREATE TABLE IF NOT EXISTS `api_keys` (
@@ -117,8 +86,7 @@ def init_db():
                 `spend_limit` DOUBLE DEFAULT 0.0,
                 `spent` DOUBLE DEFAULT 0.0,
                 `is_active` INT DEFAULT 1,
-                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                `last_used_at` TIMESTAMP NULL
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
 
@@ -132,37 +100,6 @@ def init_db():
                 `description` TEXT NOT NULL,
                 `status` VARCHAR(50) DEFAULT 'success',
                 `reference_id` VARCHAR(100) NULL,
-                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-            """)
-
-            cur.execute("""
-            CREATE TABLE IF NOT EXISTS `models` (
-                `id` INT AUTO_INCREMENT PRIMARY KEY,
-                `slug` VARCHAR(100) NOT NULL UNIQUE,
-                `name` VARCHAR(255) NOT NULL,
-                `provider` VARCHAR(100) NOT NULL,
-                `category` VARCHAR(50) NOT NULL,
-                `price_input_1m` DOUBLE NOT NULL,
-                `price_output_1m` DOUBLE NOT NULL,
-                `context_window` VARCHAR(50) NOT NULL,
-                `description` TEXT NOT NULL,
-                `badge` VARCHAR(50) NULL,
-                `latency_ms` INT DEFAULT 200,
-                `is_popular` INT DEFAULT 0
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-            """)
-
-            cur.execute("""
-            CREATE TABLE IF NOT EXISTS `usage_logs` (
-                `id` INT AUTO_INCREMENT PRIMARY KEY,
-                `user_id` INT NOT NULL,
-                `key_id` INT NULL,
-                `model_slug` VARCHAR(100) NOT NULL,
-                `tokens_prompt` INT DEFAULT 0,
-                `tokens_completion` INT DEFAULT 0,
-                `cost_rub` DOUBLE NOT NULL,
-                `latency_ms` INT DEFAULT 0,
                 `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
@@ -184,34 +121,35 @@ def init_db():
                 `id` INT AUTO_INCREMENT PRIMARY KEY,
                 `user_id` INT NOT NULL,
                 `promo_code` VARCHAR(100) NOT NULL,
-                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE KEY `user_promo_unique` (`user_id`, `promo_code`)
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
             """)
 
-            conn.commit()
-
-            # Seed models in MySQL
-            cur.execute("SELECT COUNT(*) as cnt FROM `models`")
-            row = cur.fetchone()
-            if row and row['cnt'] == 0:
-                _seed_models_mysql(cur, conn)
-
-            # Seed promo codes in MySQL
+            # Seed promo codes
             cur.execute("SELECT COUNT(*) as cnt FROM `promo_codes`")
-            row = cur.fetchone()
-            if row and row['cnt'] == 0:
-                _seed_promos_mysql(cur, conn)
+            r = cur.fetchone()
+            if r and r['cnt'] == 0:
+                promos = [
+                    ("NEURO2026", 500.0, "Промокод на 500 ₽"),
+                    ("WELCOME100", 100.0, "Бонус 100 ₽"),
+                    ("DEV500", 500.0, "Бонус разработчика +500 ₽"),
+                    ("STARTAI", 300.0, "Быстрый старт +300 ₽")
+                ]
+                cur.executemany("INSERT INTO `promo_codes` (`code`, `bonus_amount`, `description`) VALUES (%s, %s, %s)", promos)
 
             cur.close()
-            conn.close()
-            print("MySQL database initialized successfully!")
-            return
+            cnx.close()
         except Exception as e:
-            print("MySQL init error:", e)
-            if conn: conn.close()
+            print(f"[DB] Предупреждение при инициализации MySQL: {e}")
+            if cnx: cnx.close()
+    else:
+        print(f"[DB INFO] Сервер MySQL недоступен из текущей сети, используется локальный SQLite fallback `{SQLITE_PATH}`.")
+        _init_sqlite()
 
-    # SQLite initialization
+def _init_sqlite():
+    os.makedirs(os.path.dirname(SQLITE_PATH), exist_ok=True)
+    conn = sqlite3.connect(SQLITE_PATH)
+    conn.execute("PRAGMA journal_mode = WAL")
     cur = conn.cursor()
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
@@ -223,11 +161,9 @@ def init_db():
         total_spent REAL NOT NULL DEFAULT 0.0,
         total_deposited REAL NOT NULL DEFAULT 0.0,
         tier TEXT DEFAULT 'Developer',
-        avatar_color TEXT DEFAULT '#6366f1',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
-
     cur.execute("""
     CREATE TABLE IF NOT EXISTS api_keys (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -238,12 +174,9 @@ def init_db():
         spend_limit REAL DEFAULT 0.0,
         spent REAL DEFAULT 0.0,
         is_active INTEGER DEFAULT 1,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        last_used_at TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
-
     cur.execute("""
     CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -254,43 +187,9 @@ def init_db():
         description TEXT NOT NULL,
         status TEXT DEFAULT 'success',
         reference_id TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS models (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        slug TEXT UNIQUE NOT NULL,
-        name TEXT NOT NULL,
-        provider TEXT NOT NULL,
-        category TEXT NOT NULL,
-        price_input_1m REAL NOT NULL,
-        price_output_1m REAL NOT NULL,
-        context_window TEXT NOT NULL,
-        description TEXT NOT NULL,
-        badge TEXT,
-        latency_ms INTEGER DEFAULT 200,
-        is_popular INTEGER DEFAULT 0
-    )
-    """)
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS usage_logs (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        key_id INTEGER,
-        model_slug TEXT NOT NULL,
-        tokens_prompt INTEGER DEFAULT 0,
-        tokens_completion INTEGER DEFAULT 0,
-        cost_rub REAL NOT NULL,
-        latency_ms INTEGER DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    )
-    """)
-
     cur.execute("""
     CREATE TABLE IF NOT EXISTS promo_codes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -302,246 +201,194 @@ def init_db():
         is_active INTEGER DEFAULT 1
     )
     """)
-
     cur.execute("""
     CREATE TABLE IF NOT EXISTS used_promos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         promo_code TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        UNIQUE(user_id, promo_code)
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
-
     conn.commit()
-
-    cur.execute("SELECT COUNT(*) as cnt FROM models")
-    if cur.fetchone()["cnt"] == 0:
-        _seed_models_sqlite(cur, conn)
-
-    cur.execute("SELECT COUNT(*) as cnt FROM promo_codes")
-    if cur.fetchone()["cnt"] == 0:
-        _seed_promos_sqlite(cur, conn)
-
-    # Demo user
-    cur.execute("SELECT COUNT(*) as cnt FROM users")
-    if cur.fetchone()["cnt"] == 0:
-        demo_pass_hash = hash_password("demo123")
-        cur.execute("""
-        INSERT INTO users (username, email, password_hash, balance, total_spent, total_deposited, tier, avatar_color)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, ("Александр Смирнов", "demo@neuroapi.io", demo_pass_hash, 1250.0, 340.5, 1500.0, "Pro Developer", "#6366f1"))
-        demo_user_id = cur.lastrowid
-
-        demo_key_raw = generate_api_key()
-        demo_key_hash = hash_password(demo_key_raw)
-        demo_key_prefix = demo_key_raw[:14] + "..." + demo_key_raw[-4:]
-        cur.execute("""
-        INSERT INTO api_keys (user_id, name, key_hash, key_prefix, spend_limit, spent, is_active)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (demo_user_id, "Основной API ключ (Production)", demo_key_hash, demo_key_prefix, 5000.0, 340.5, 1))
-
-        conn.commit()
-
     conn.close()
 
-def _get_seed_models_data():
-    return [
-        ("gpt-4o", "GPT-4o Omni", "OpenAI", "text", 225.0, 900.0, "128k", "Флагманская мультимодальная модель от OpenAI: высокая скорость и глубокое понимание контекста", "ХИТ", 180, 1),
-        ("gpt-4o-mini", "GPT-4o Mini", "OpenAI", "text", 13.5, 54.0, "128k", "Ультрабыстрая и экономичная модель для базовых задач и чат-ботов", "ЭКОНОМ", 110, 1),
-        ("o1-preview", "o1 Reasoning", "OpenAI", "reasoning", 1350.0, 5400.0, "128k", "Модель глубоких рассуждений для сложных научных, математических и архитектурных задач", "PRO", 750, 0),
-        ("o3-mini", "o3-mini STEM", "OpenAI", "reasoning", 99.0, 396.0, "200k", "Компактная reasoning модель нового поколения для точного программирования и логики", "NEW", 280, 1),
-        ("claude-3-5-sonnet", "Claude 3.5 Sonnet", "Anthropic", "text", 270.0, 1350.0, "200k", "Лучшая в мире модель для написания сложного кода, анализа архитектуры и аналитики", "ТОП КОД", 210, 1),
-        ("claude-3-5-haiku", "Claude 3.5 Haiku", "Anthropic", "text", 72.0, 360.0, "200k", "Молниеносная модель с высоким интеллектом для реального времени и суппорта", "БЫСТРЫЙ", 95, 1),
-        ("deepseek-chat-v3", "DeepSeek V3 (671B)", "DeepSeek", "text", 12.0, 24.0, "64k", "Мощная открытая модель мирового уровня с рекордно низкой стоимостью токенов", "ВЫГОДА", 150, 1),
-        ("deepseek-reasoner-r1", "DeepSeek R1", "DeepSeek", "reasoning", 49.0, 195.0, "64k", "Продвинутая модель логического вывода и рассуждений (CoT), соперник o1", "ТРЕНД", 420, 1),
-        ("llama-3.3-70b", "Llama 3.3 70B Instruct", "Meta", "text", 28.0, 72.0, "128k", "Мощнейшая открытая модель Meta с качеством на уровне GPT-4", "OPEN", 140, 0),
-        ("qwen-2.5-coder-32b", "Qwen 2.5 Coder 32B", "Alibaba", "code", 18.0, 54.0, "128k", "Специализированная нейросеть для генерации, рефакторинга и поиска багов в коде", "КОДИНГ", 130, 0),
-        ("mistral-large-2411", "Mistral Large 2", "Mistral AI", "text", 180.0, 540.0, "128k", "Европейская флагманская языковая модель с отличным русским и логикой", "PRO", 190, 0),
-        ("flux-1-schnell", "FLUX.1 Schnell", "Black Forest Labs", "image", 2.5, 2.5, "1k x 1k", "Генерация фотореалистичных изображений за 1-2 секунды (цена за 1 генерацию)", "БЫСТРЫЙ", 1200, 1),
-        ("flux-1-dev", "FLUX.1 Dev HQ", "Black Forest Labs", "image", 4.9, 4.9, "2k x 2k", "Максимальная детализация, точное следование тексту и анатомии (за генерацию)", "HQ", 3500, 1),
-        ("midjourney-v6-api", "Midjourney v6.1 API", "Midjourney", "image", 6.5, 6.5, "HD/UHD", "Художественные шедевры, брендинг, концепт-арт через прямой API (за генерацию)", "АРТ", 4500, 1),
-        ("dall-e-3", "DALL-E 3 HD", "OpenAI", "image", 3.8, 3.8, "1024x1024", "Генерация сложных сцен с точным пониманием длинных промптов (за генерацию)", "OPENAI", 2800, 0),
-        ("whisper-large-v3", "Whisper Large v3", "OpenAI", "audio", 0.45, 0.45, "Аудио", "Сверхточное распознавание речи на 99 языках с таймкодами (цена за 1 минуту)", "АУДИО", 450, 0),
-        ("elevenlabs-v2", "ElevenLabs Turbo v2", "ElevenLabs", "audio", 1.80, 1.80, "1k симв.", "Естественная озвучка текста эмоциональными человеческими голосами (за 1k симв.)", "ГОЛОС", 600, 0)
-    ]
-
-def _seed_models_sqlite(cur, conn):
-    cur.executemany("""
-    INSERT INTO models (slug, name, provider, category, price_input_1m, price_output_1m, context_window, description, badge, latency_ms, is_popular)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, _get_seed_models_data())
-    conn.commit()
-
-def _seed_models_mysql(cur, conn):
-    cur.executemany("""
-    INSERT INTO `models` (`slug`, `name`, `provider`, `category`, `price_input_1m`, `price_output_1m`, `context_window`, `description`, `badge`, `latency_ms`, `is_popular`)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-    """, _get_seed_models_data())
-    conn.commit()
-
-def _seed_promos_sqlite(cur, conn):
-    promos = [
-        ("NEURO2026", 500.0, "Промокод на 500 ₽ для новых разработчиков"),
-        ("WELCOME100", 100.0, "Приветственный бонус 100 ₽"),
-        ("DEV500", 500.0, "Бонус для разработчиков +500 ₽"),
-        ("DUCKAI", 250.0, "Бонус от сообщества +250 ₽"),
-        ("STARTAI", 300.0, "Быстрый старт +300 ₽")
-    ]
-    cur.executemany("INSERT INTO promo_codes (code, bonus_amount, description) VALUES (?, ?, ?)", promos)
-    conn.commit()
-
-def _seed_promos_mysql(cur, conn):
-    promos = [
-        ("NEURO2026", 500.0, "Промокод на 500 ₽ для новых разработчиков"),
-        ("WELCOME100", 100.0, "Приветственный бонус 100 ₽"),
-        ("DEV500", 500.0, "Бонус для разработчиков +500 ₽"),
-        ("DUCKAI", 250.0, "Бонус от сообщества +250 ₽"),
-        ("STARTAI", 300.0, "Быстрый старт +300 ₽")
-    ]
-    cur.executemany("INSERT INTO `promo_codes` (`code`, `bonus_amount`, `description`) VALUES (%s, %s, %s)", promos)
-    conn.commit()
-
 # -------------------------------------------------------------
-# USER CRUD OPERATIONS
+# USER AUTH OPERATIONS (EXACT ORIGINAL MYSQL QUERIES)
 # -------------------------------------------------------------
 
 def get_user_by_email(email: str) -> Optional[Dict[str, Any]]:
-    db_type, conn = get_db()
     clean_email = email.strip().lower()
-    
-    if db_type == "mysql":
-        cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT * FROM `users` WHERE `email` = %s", (clean_email,))
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
-        if row:
-            if 'balance' not in row or row['balance'] is None: row['balance'] = 150.0
-            if 'total_spent' not in row or row['total_spent'] is None: row['total_spent'] = 0.0
-            if 'total_deposited' not in row or row['total_deposited'] is None: row['total_deposited'] = 0.0
-        return row
-    else:
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM users WHERE email = ?", (clean_email,))
-        row = cur.fetchone()
-        conn.close()
-        return dict(row) if row else None
+    cnx = get_mysql_connection()
+    if cnx:
+        try:
+            print(f"[MySQL] Выполняем: SELECT * FROM `users` WHERE `email` = '{clean_email}'")
+            cur = cnx.cursor(dictionary=True)
+            cur.execute("SELECT * FROM `users` WHERE `email` = %s", (clean_email,))
+            user = cur.fetchone()
+            if user:
+                # Attach balance from user_balances if present
+                user_id = user['id']
+                try:
+                    cur.execute("SELECT `balance`, `total_spent`, `total_deposited` FROM `user_balances` WHERE `user_id` = %s", (user_id,))
+                    bal_row = cur.fetchone()
+                    if bal_row:
+                        user['balance'] = bal_row['balance']
+                        user['total_spent'] = bal_row['total_spent']
+                        user['total_deposited'] = bal_row['total_deposited']
+                    else:
+                        user['balance'] = user.get('balance', 150.0) or 150.0
+                        user['total_spent'] = user.get('total_spent', 0.0) or 0.0
+                        user['total_deposited'] = user.get('total_deposited', 0.0) or 0.0
+                except Exception:
+                    user['balance'] = user.get('balance', 150.0) or 150.0
+                    user['total_spent'] = user.get('total_spent', 0.0) or 0.0
+                    user['total_deposited'] = user.get('total_deposited', 0.0) or 0.0
+            cur.close()
+            cnx.close()
+            return user
+        except Exception as e:
+            print(f"[MySQL Error] {e}")
+            if cnx: cnx.close()
+
+    # SQLite fallback
+    conn = sqlite3.connect(SQLITE_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE email = ?", (clean_email,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
-    db_type, conn = get_db()
-    
-    if db_type == "mysql":
-        cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT * FROM `users` WHERE `id` = %s", (user_id,))
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
-        if row:
-            if 'balance' not in row or row['balance'] is None: row['balance'] = 150.0
-            if 'total_spent' not in row or row['total_spent'] is None: row['total_spent'] = 0.0
-            if 'total_deposited' not in row or row['total_deposited'] is None: row['total_deposited'] = 0.0
-        return row
-    else:
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-        row = cur.fetchone()
-        conn.close()
-        return dict(row) if row else None
+    cnx = get_mysql_connection()
+    if cnx:
+        try:
+            cur = cnx.cursor(dictionary=True)
+            cur.execute("SELECT * FROM `users` WHERE `id` = %s", (user_id,))
+            user = cur.fetchone()
+            if user:
+                try:
+                    cur.execute("SELECT `balance`, `total_spent`, `total_deposited` FROM `user_balances` WHERE `user_id` = %s", (user_id,))
+                    bal_row = cur.fetchone()
+                    if bal_row:
+                        user['balance'] = bal_row['balance']
+                        user['total_spent'] = bal_row['total_spent']
+                        user['total_deposited'] = bal_row['total_deposited']
+                    else:
+                        user['balance'] = user.get('balance', 150.0) or 150.0
+                        user['total_spent'] = user.get('total_spent', 0.0) or 0.0
+                        user['total_deposited'] = user.get('total_deposited', 0.0) or 0.0
+                except Exception:
+                    user['balance'] = user.get('balance', 150.0) or 150.0
+                    user['total_spent'] = user.get('total_spent', 0.0) or 0.0
+                    user['total_deposited'] = user.get('total_deposited', 0.0) or 0.0
+            cur.close()
+            cnx.close()
+            return user
+        except Exception as e:
+            print(f"[MySQL Error] {e}")
+            if cnx: cnx.close()
+
+    conn = sqlite3.connect(SQLITE_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 def create_user(username: str, email: str, password_hash: str, initial_bonus: float = 150.0) -> Dict[str, Any]:
-    colors = ["#6366f1", "#8b5cf6", "#ec4899", "#3b82f6", "#10b981", "#f59e0b", "#06b6d4"]
-    avatar_color = secrets.choice(colors)
     clean_name = username.strip()
     clean_email = email.strip().lower()
 
-    db_type, conn = get_db()
-    
-    if db_type == "mysql":
-        cur = conn.cursor(dictionary=True)
-        
-        # Check if users table has balance column
-        cur.execute("DESCRIBE `users`")
-        cols = [r['Field'] for r in cur.fetchall()]
-        
-        if 'balance' in cols:
-            cur.execute("""
-            INSERT INTO `users` (`username`, `email`, `password_hash`, `balance`, `total_spent`, `total_deposited`, `tier`, `avatar_color`)
-            VALUES (%s, %s, %s, %s, 0.0, 0.0, 'Developer', %s)
-            """, (clean_name, clean_email, password_hash, initial_bonus, avatar_color))
-        else:
-            cur.execute("""
-            INSERT INTO `users` (`username`, `email`, `password_hash`)
-            VALUES (%s, %s, %s)
-            """, (clean_name, clean_email, password_hash))
+    cnx = get_mysql_connection()
+    if cnx:
+        try:
+            print(f"[MySQL] Выполняем: INSERT INTO `users`(`username`, `email`, `password_hash`) VALUES ('{clean_name}', '{clean_email}', '***')")
+            cur = cnx.cursor(dictionary=True)
             
-        user_id = cur.lastrowid
+            # The EXACT original query from your initial repository!
+            query = 'INSERT INTO `users`(`username`, `email`, `password_hash`) VALUES (%s, %s, %s)'
+            cur.execute(query, (clean_name, clean_email, password_hash))
+            user_id = cur.lastrowid
 
-        # Insert bonus transaction
-        try:
-            cur.execute("""
-            INSERT INTO `transactions` (`user_id`, `amount`, `type`, `payment_method`, `description`, `status`, `reference_id`)
-            VALUES (%s, %s, 'bonus', 'system', '🎁 Приветственный бонус на баланс при регистрации', 'success', %s)
-            """, (user_id, initial_bonus, f"BONUS-{secrets.token_hex(4).upper()}"))
-        except Exception:
-            pass
+            # Save initial balance
+            try:
+                cur.execute("""
+                INSERT INTO `user_balances` (`user_id`, `email`, `balance`, `total_spent`, `total_deposited`)
+                VALUES (%s, %s, %s, 0.0, 0.0)
+                ON DUPLICATE KEY UPDATE `balance` = %s
+                """, (user_id, clean_email, initial_bonus, initial_bonus))
+            except Exception:
+                pass
 
-        # Generate default API key
-        raw_key = generate_api_key()
-        key_hash = hash_password(raw_key)
-        key_prefix = raw_key[:14] + "..." + raw_key[-4:]
-        try:
-            cur.execute("""
-            INSERT INTO `api_keys` (`user_id`, `name`, `key_hash`, `key_prefix`, `spend_limit`, `spent`, `is_active`)
-            VALUES (%s, %s, %s, %s, 0.0, 0.0, 1)
-            """, (user_id, "Основной ключ (Default)", key_hash, key_prefix))
-        except Exception:
-            pass
+            # Create default API key
+            raw_key = generate_api_key()
+            key_hash = hash_password(raw_key)
+            key_prefix = raw_key[:14] + "..." + raw_key[-4:]
+            try:
+                cur.execute("""
+                INSERT INTO `api_keys` (`user_id`, `name`, `key_hash`, `key_prefix`, `spend_limit`, `spent`, `is_active`)
+                VALUES (%s, %s, %s, %s, 0.0, 0.0, 1)
+                """, (user_id, "Основной ключ (Default)", key_hash, key_prefix))
+            except Exception:
+                pass
 
-        conn.commit()
-        cur.execute("SELECT * FROM `users` WHERE `id` = %s", (user_id,))
-        user = cur.fetchone()
-        cur.close()
-        conn.close()
+            # Record bonus transaction
+            try:
+                cur.execute("""
+                INSERT INTO `transactions` (`user_id`, `amount`, `type`, `payment_method`, `description`, `status`, `reference_id`)
+                VALUES (%s, %s, 'bonus', 'system', '🎁 Стартовый баланс при регистрации', 'success', %s)
+                """, (user_id, initial_bonus, f"BONUS-{secrets.token_hex(4).upper()}"))
+            except Exception:
+                pass
 
-        if user:
-            if 'balance' not in user or user['balance'] is None: user['balance'] = initial_bonus
-            if 'total_spent' not in user or user['total_spent'] is None: user['total_spent'] = 0.0
-            if 'total_deposited' not in user or user['total_deposited'] is None: user['total_deposited'] = 0.0
-            user["initial_key"] = raw_key
-            return user
-        return {"id": user_id, "username": clean_name, "email": clean_email, "balance": initial_bonus, "initial_key": raw_key}
+            cnx.commit()
+            cur.close()
+            cnx.close()
+            print(f"[MySQL SUCCESS] Пользователь {clean_email} успешно зарегистрирован в базе данных `{DB_CONFIG['database']}`! ID: {user_id}")
+            return {
+                "id": user_id,
+                "username": clean_name,
+                "email": clean_email,
+                "balance": initial_bonus,
+                "initial_key": raw_key
+            }
+        except Exception as e:
+            print(f"[MySQL Insert Error] {e}")
+            if cnx: cnx.close()
+            raise e
 
-    else:
-        # SQLite
-        cur = conn.cursor()
-        cur.execute("""
-        INSERT INTO users (username, email, password_hash, balance, total_spent, total_deposited, tier, avatar_color)
-        VALUES (?, ?, ?, ?, 0.0, 0.0, 'Developer', ?)
-        """, (clean_name, clean_email, password_hash, initial_bonus, avatar_color))
-        
-        user_id = cur.lastrowid
-        
-        cur.execute("""
-        INSERT INTO transactions (user_id, amount, type, payment_method, description, status, reference_id)
-        VALUES (?, ?, 'bonus', 'system', '🎁 Приветственный бонус на баланс при регистрации', 'success', ?)
-        """, (user_id, initial_bonus, f"BONUS-{secrets.token_hex(4).upper()}"))
+    # SQLite fallback
+    conn = sqlite3.connect(SQLITE_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+    INSERT INTO users (username, email, password_hash, balance, total_spent, total_deposited)
+    VALUES (?, ?, ?, ?, 0.0, 0.0)
+    """, (clean_name, clean_email, password_hash, initial_bonus))
+    user_id = cur.lastrowid
 
-        raw_key = generate_api_key()
-        key_hash = hash_password(raw_key)
-        key_prefix = raw_key[:14] + "..." + raw_key[-4:]
-        cur.execute("""
-        INSERT INTO api_keys (user_id, name, key_hash, key_prefix, spend_limit, spent, is_active)
-        VALUES (?, ?, ?, ?, 0.0, 0.0, 1)
-        """, (user_id, "Основной ключ (Default)", key_hash, key_prefix))
+    raw_key = generate_api_key()
+    key_hash = hash_password(raw_key)
+    key_prefix = raw_key[:14] + "..." + raw_key[-4:]
+    cur.execute("""
+    INSERT INTO api_keys (user_id, name, key_hash, key_prefix, spend_limit, spent, is_active)
+    VALUES (?, ?, ?, ?, 0.0, 0.0, 1)
+    """, (user_id, "Основной ключ (Default)", key_hash, key_prefix))
 
-        conn.commit()
-        cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-        user = dict(cur.fetchone())
-        conn.close()
-        user["initial_key"] = raw_key
-        return user
+    conn.commit()
+    conn.close()
+    return {
+        "id": user_id,
+        "username": clean_name,
+        "email": clean_email,
+        "balance": initial_bonus,
+        "initial_key": raw_key
+    }
+
+# -------------------------------------------------------------
+# BALANCE & TRANSACTIONS
+# -------------------------------------------------------------
 
 def add_user_balance(user_id: int, amount: float, method: str = "sbp", description: str = None) -> Dict[str, Any]:
     if amount <= 0:
@@ -562,306 +409,297 @@ def add_user_balance(user_id: int, amount: float, method: str = "sbp", descripti
             desc_parts.append(f"включая бонус {int(bonus_pct*100)}% (+{bonus_rub:.2f} ₽)")
         description = " ".join(desc_parts)
 
-    db_type, conn = get_db()
-    if db_type == "mysql":
-        cur = conn.cursor(dictionary=True)
-        cur.execute("UPDATE `users` SET `balance` = `balance` + %s, `total_deposited` = `total_deposited` + %s WHERE `id` = %s", (total_credit, amount, user_id))
-        cur.execute("""
-        INSERT INTO `transactions` (`user_id`, `amount`, `type`, `payment_method`, `description`, `status`, `reference_id`)
-        VALUES (%s, %s, 'topup', %s, %s, 'success', %s)
-        """, (user_id, total_credit, method, description, tx_ref))
-        conn.commit()
-        cur.execute("SELECT `balance`, `total_deposited` FROM `users` WHERE `id` = %s", (user_id,))
-        user_row = cur.fetchone()
-        cur.close()
-        conn.close()
-        new_balance = user_row["balance"] if user_row else total_credit
-    else:
-        cur = conn.cursor()
-        cur.execute("UPDATE users SET balance = balance + ?, total_deposited = total_deposited + ? WHERE id = ?", (total_credit, amount, user_id))
-        cur.execute("""
-        INSERT INTO transactions (user_id, amount, type, payment_method, description, status, reference_id)
-        VALUES (?, ?, 'topup', ?, ?, 'success', ?)
-        """, (user_id, total_credit, method, description, tx_ref))
-        conn.commit()
-        cur.execute("SELECT balance, total_deposited FROM users WHERE id = ?", (user_id,))
-        user_row = dict(cur.fetchone())
-        conn.close()
-        new_balance = user_row["balance"]
+    cnx = get_mysql_connection()
+    if cnx:
+        try:
+            print(f"[MySQL] Пополнение баланса для user_id={user_id} на +{total_credit} ₽")
+            cur = cnx.cursor(dictionary=True)
+            cur.execute("""
+            INSERT INTO `user_balances` (`user_id`, `email`, `balance`, `total_spent`, `total_deposited`)
+            VALUES (%s, '', %s, 0.0, %s)
+            ON DUPLICATE KEY UPDATE `balance` = `balance` + %s, `total_deposited` = `total_deposited` + %s
+            """, (user_id, total_credit, amount, total_credit, amount))
 
+            try:
+                cur.execute("UPDATE `users` SET `balance` = `balance` + %s WHERE `id` = %s", (total_credit, user_id))
+            except Exception:
+                pass
+
+            cur.execute("""
+            INSERT INTO `transactions` (`user_id`, `amount`, `type`, `payment_method`, `description`, `status`, `reference_id`)
+            VALUES (%s, %s, 'topup', %s, %s, 'success', %s)
+            """, (user_id, total_credit, method, description, tx_ref))
+
+            cnx.commit()
+            cur.execute("SELECT `balance` FROM `user_balances` WHERE `user_id` = %s", (user_id,))
+            row = cur.fetchone()
+            cur.close()
+            cnx.close()
+            new_balance = row['balance'] if row else total_credit
+            return {
+                "success": True,
+                "credited": total_credit,
+                "amount": amount,
+                "bonus": bonus_rub,
+                "new_balance": new_balance,
+                "reference_id": tx_ref,
+                "description": description
+            }
+        except Exception as e:
+            print(f"[MySQL Topup Error] {e}")
+            if cnx: cnx.close()
+
+    # SQLite
+    conn = sqlite3.connect(SQLITE_PATH)
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET balance = balance + ?, total_deposited = total_deposited + ? WHERE id = ?", (total_credit, amount, user_id))
+    cur.execute("""
+    INSERT INTO transactions (user_id, amount, type, payment_method, description, status, reference_id)
+    VALUES (?, ?, 'topup', ?, ?, 'success', ?)
+    """, (user_id, total_credit, method, description, tx_ref))
+    conn.commit()
+    cur.execute("SELECT balance FROM users WHERE id = ?", (user_id,))
+    row = cur.fetchone()
+    conn.close()
     return {
         "success": True,
         "credited": total_credit,
         "amount": amount,
         "bonus": bonus_rub,
-        "new_balance": new_balance,
+        "new_balance": row[0] if row else total_credit,
         "reference_id": tx_ref,
         "description": description
     }
 
 def apply_promo_code(user_id: int, code_str: str) -> Dict[str, Any]:
     code_clean = code_str.strip().upper()
-    db_type, conn = get_db()
-    
-    if db_type == "mysql":
-        cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT * FROM `promo_codes` WHERE `code` = %s AND `is_active` = 1", (code_clean,))
-        promo = cur.fetchone()
-        if not promo:
-            cur.close(); conn.close()
-            return {"success": False, "error": "Промокод не найден или срок действия истек"}
-        
-        cur.execute("SELECT `id` FROM `used_promos` WHERE `user_id` = %s AND `promo_code` = %s", (user_id, code_clean))
-        if cur.fetchone():
-            cur.close(); conn.close()
-            return {"success": False, "error": "Вы уже активировали этот промокод"}
+    cnx = get_mysql_connection()
+    if cnx:
+        try:
+            cur = cnx.cursor(dictionary=True)
+            cur.execute("SELECT * FROM `promo_codes` WHERE `code` = %s AND `is_active` = 1", (code_clean,))
+            promo = cur.fetchone()
+            if not promo:
+                cur.close(); cnx.close()
+                return {"success": False, "error": "Промокод не найден"}
 
-        bonus = promo["bonus_amount"]
-        cur.execute("UPDATE `users` SET `balance` = `balance` + %s WHERE `id` = %s", (bonus, user_id))
-        cur.execute("UPDATE `promo_codes` SET `used_count` = `used_count` + 1 WHERE `id` = %s", (promo["id"],))
-        cur.execute("INSERT INTO `used_promos` (`user_id`, `promo_code`) VALUES (%s, %s)", (user_id, code_clean))
-        
-        tx_ref = f"PROMO-{secrets.token_hex(4).upper()}"
-        cur.execute("""
-        INSERT INTO `transactions` (`user_id`, `amount`, `type`, `payment_method`, `description`, `status`, `reference_id`)
-        VALUES (%s, %s, 'bonus', 'promo', %s, 'success', %s)
-        """, (user_id, bonus, f"Активация промокода {code_clean} (+{bonus:.2f} ₽)", tx_ref))
-        conn.commit()
-        
-        cur.execute("SELECT `balance` FROM `users` WHERE `id` = %s", (user_id,))
-        new_bal = cur.fetchone()["balance"]
-        cur.close(); conn.close()
-        
-    else:
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM promo_codes WHERE code = ? AND is_active = 1", (code_clean,))
-        promo = cur.fetchone()
-        if not promo:
-            conn.close()
-            return {"success": False, "error": "Промокод не найден или срок действия истек"}
-        
-        cur.execute("SELECT id FROM used_promos WHERE user_id = ? AND promo_code = ?", (user_id, code_clean))
-        if cur.fetchone():
-            conn.close()
-            return {"success": False, "error": "Вы уже активировали этот промокод"}
+            cur.execute("SELECT `id` FROM `used_promos` WHERE `user_id` = %s AND `promo_code` = %s", (user_id, code_clean))
+            if cur.fetchone():
+                cur.close(); cnx.close()
+                return {"success": False, "error": "Вы уже активировали этот промокод"}
 
-        bonus = promo["bonus_amount"]
-        cur.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (bonus, user_id))
-        cur.execute("UPDATE promo_codes SET used_count = used_count + 1 WHERE id = ?", (promo["id"],))
-        cur.execute("INSERT INTO used_promos (user_id, promo_code) VALUES (?, ?)", (user_id, code_clean))
-        
-        tx_ref = f"PROMO-{secrets.token_hex(4).upper()}"
-        cur.execute("""
-        INSERT INTO transactions (user_id, amount, type, payment_method, description, status, reference_id)
-        VALUES (?, ?, 'bonus', 'promo', ?, 'success', ?)
-        """, (user_id, bonus, f"Активация промокода {code_clean} (+{bonus:.2f} ₽)", tx_ref))
-        conn.commit()
-        
-        cur.execute("SELECT balance FROM users WHERE id = ?", (user_id,))
-        new_bal = cur.fetchone()["balance"]
+            bonus = promo["bonus_amount"]
+            cur.execute("""
+            INSERT INTO `user_balances` (`user_id`, `email`, `balance`, `total_spent`, `total_deposited`)
+            VALUES (%s, '', %s, 0.0, 0.0)
+            ON DUPLICATE KEY UPDATE `balance` = `balance` + %s
+            """, (user_id, bonus, bonus))
+
+            cur.execute("INSERT INTO `used_promos` (`user_id`, `promo_code`) VALUES (%s, %s)", (user_id, code_clean))
+            cur.execute("""
+            INSERT INTO `transactions` (`user_id`, `amount`, `type`, `payment_method`, `description`, `status`, `reference_id`)
+            VALUES (%s, %s, 'bonus', 'promo', %s, 'success', %s)
+            """, (user_id, bonus, f"Активация промокода {code_clean} (+{bonus:.2f} ₽)", f"PROMO-{secrets.token_hex(4).upper()}"))
+            cnx.commit()
+
+            cur.execute("SELECT `balance` FROM `user_balances` WHERE `user_id` = %s", (user_id,))
+            new_bal = cur.fetchone()['balance']
+            cur.close(); cnx.close()
+            return {"success": True, "bonus_amount": bonus, "new_balance": new_bal, "message": f"Промокод активирован! Начислено {bonus:.2f} ₽"}
+        except Exception as e:
+            print(f"[MySQL Promo Error] {e}")
+            if cnx: cnx.close()
+
+    # SQLite
+    conn = sqlite3.connect(SQLITE_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM promo_codes WHERE code = ? AND is_active = 1", (code_clean,))
+    promo = cur.fetchone()
+    if not promo:
         conn.close()
+        return {"success": False, "error": "Промокод не найден"}
 
-    return {
-        "success": True,
-        "bonus_amount": bonus,
-        "new_balance": new_bal,
-        "message": f"Промокод успешно активирован! Начислено {bonus:.2f} ₽"
-    }
+    cur.execute("SELECT id FROM used_promos WHERE user_id = ? AND promo_code = ?", (user_id, code_clean))
+    if cur.fetchone():
+        conn.close()
+        return {"success": False, "error": "Вы уже активировали этот промокод"}
+
+    bonus = promo[2]
+    cur.execute("UPDATE users SET balance = balance + ? WHERE id = ?", (bonus, user_id))
+    cur.execute("INSERT INTO used_promos (user_id, promo_code) VALUES (?, ?)", (user_id, code_clean))
+    cur.execute("""
+    INSERT INTO transactions (user_id, amount, type, payment_method, description, status, reference_id)
+    VALUES (?, ?, 'bonus', 'promo', ?, 'success', ?)
+    """, (user_id, bonus, f"Активация промокода {code_clean} (+{bonus:.2f} ₽)", f"PROMO-{secrets.token_hex(4).upper()}"))
+    conn.commit()
+    cur.execute("SELECT balance FROM users WHERE id = ?", (user_id,))
+    new_bal = cur.fetchone()[0]
+    conn.close()
+    return {"success": True, "bonus_amount": bonus, "new_balance": new_bal, "message": f"Промокод активирован! Начислено {bonus:.2f} ₽"}
 
 def debit_user_balance_for_api(user_id: int, cost: float, model_slug: str, prompt_tokens: int, comp_tokens: int, latency_ms: int = 150) -> bool:
-    db_type, conn = get_db()
-    
-    if db_type == "mysql":
-        cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT `balance`, `total_spent` FROM `users` WHERE `id` = %s", (user_id,))
-        user = cur.fetchone()
-        if not user or (user.get("balance") or 0) < cost:
-            cur.close(); conn.close()
-            return False
-            
-        cur.execute("UPDATE `users` SET `balance` = `balance` - %s, `total_spent` = `total_spent` + %s WHERE `id` = %s", (cost, cost, user_id))
-        cur.execute("""
-        INSERT INTO `usage_logs` (`user_id`, `model_slug`, `tokens_prompt`, `tokens_completion`, `cost_rub`, `latency_ms`)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        """, (user_id, model_slug, prompt_tokens, comp_tokens, cost, latency_ms))
-        cur.execute("""
-        INSERT INTO `transactions` (`user_id`, `amount`, `type`, `payment_method`, `description`, `status`, `reference_id`)
-        VALUES (%s, %s, 'usage', 'api_usage', %s, 'success', %s)
-        """, (user_id, -cost, f"API запрос к {model_slug} ({prompt_tokens + comp_tokens} токенов)", f"USG-{secrets.token_hex(4).upper()}"))
-        conn.commit()
-        cur.close(); conn.close()
-        return True
-    else:
-        cur = conn.cursor()
-        cur.execute("SELECT balance, total_spent FROM users WHERE id = ?", (user_id,))
-        user = cur.fetchone()
-        if not user or user["balance"] < cost:
-            conn.close()
-            return False
-            
-        cur.execute("UPDATE users SET balance = balance - ?, total_spent = total_spent + ? WHERE id = ?", (cost, cost, user_id))
-        cur.execute("""
-        INSERT INTO usage_logs (user_id, model_slug, tokens_prompt, tokens_completion, cost_rub, latency_ms)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """, (user_id, model_slug, prompt_tokens, comp_tokens, cost, latency_ms))
-        cur.execute("""
-        INSERT INTO transactions (user_id, amount, type, payment_method, description, status, reference_id)
-        VALUES (?, ?, 'usage', 'api_usage', ?, 'success', ?)
-        """, (user_id, -cost, f"API запрос к {model_slug} ({prompt_tokens + comp_tokens} токенов)", f"USG-{secrets.token_hex(4).upper()}"))
-        conn.commit()
-        conn.close()
-        return True
+    user = get_user_by_id(user_id)
+    if not user or (user.get('balance') or 0) < cost:
+        return False
+
+    cnx = get_mysql_connection()
+    if cnx:
+        try:
+            cur = cnx.cursor()
+            cur.execute("""
+            UPDATE `user_balances`
+            SET `balance` = `balance` - %s, `total_spent` = `total_spent` + %s
+            WHERE `user_id` = %s
+            """, (cost, cost, user_id))
+            cur.execute("""
+            INSERT INTO `transactions` (`user_id`, `amount`, `type`, `payment_method`, `description`, `status`, `reference_id`)
+            VALUES (%s, %s, 'usage', 'api_usage', %s, 'success', %s)
+            """, (user_id, -cost, f"API запрос: {model_slug} ({prompt_tokens + comp_tokens} токенов)", f"USG-{secrets.token_hex(4).upper()}"))
+            cnx.commit()
+            cur.close(); cnx.close()
+            return True
+        except Exception as e:
+            print(f"[MySQL Debit Error] {e}")
+            if cnx: cnx.close()
+
+    conn = sqlite3.connect(SQLITE_PATH)
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET balance = balance - ?, total_spent = total_spent + ? WHERE id = ?", (cost, cost, user_id))
+    cur.execute("""
+    INSERT INTO transactions (user_id, amount, type, payment_method, description, status, reference_id)
+    VALUES (?, ?, 'usage', 'api_usage', ?, 'success', ?)
+    """, (user_id, -cost, f"API запрос: {model_slug} ({prompt_tokens + comp_tokens} токенов)", f"USG-{secrets.token_hex(4).upper()}"))
+    conn.commit()
+    conn.close()
+    return True
 
 def get_user_transactions(user_id: int, limit: int = 50) -> List[Dict[str, Any]]:
-    db_type, conn = get_db()
-    if db_type == "mysql":
-        cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT * FROM `transactions` WHERE `user_id` = %s ORDER BY `created_at` DESC, `id` DESC LIMIT %s", (user_id, limit))
-        rows = cur.fetchall()
-        cur.close(); conn.close()
-        return [dict(r) for r in rows]
-    else:
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?", (user_id, limit))
-        rows = cur.fetchall()
-        conn.close()
-        return [dict(r) for r in rows]
+    cnx = get_mysql_connection()
+    if cnx:
+        try:
+            cur = cnx.cursor(dictionary=True)
+            cur.execute("SELECT * FROM `transactions` WHERE `user_id` = %s ORDER BY `created_at` DESC, `id` DESC LIMIT %s", (user_id, limit))
+            rows = cur.fetchall()
+            cur.close(); cnx.close()
+            return rows
+        except Exception as e:
+            if cnx: cnx.close()
+
+    conn = sqlite3.connect(SQLITE_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT ?", (user_id, limit))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 def get_user_api_keys(user_id: int) -> List[Dict[str, Any]]:
-    db_type, conn = get_db()
-    if db_type == "mysql":
-        cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT `id`, `user_id`, `name`, `key_prefix`, `spend_limit`, `spent`, `is_active`, `created_at`, `last_used_at` FROM `api_keys` WHERE `user_id` = %s ORDER BY `created_at` DESC", (user_id,))
-        rows = cur.fetchall()
-        cur.close(); conn.close()
-        return [dict(r) for r in rows]
-    else:
-        cur = conn.cursor()
-        cur.execute("SELECT id, user_id, name, key_prefix, spend_limit, spent, is_active, created_at, last_used_at FROM api_keys WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
-        rows = cur.fetchall()
-        conn.close()
-        return [dict(r) for r in rows]
+    cnx = get_mysql_connection()
+    if cnx:
+        try:
+            cur = cnx.cursor(dictionary=True)
+            cur.execute("SELECT `id`, `user_id`, `name`, `key_prefix`, `spend_limit`, `spent`, `is_active`, `created_at` FROM `api_keys` WHERE `user_id` = %s ORDER BY `created_at` DESC", (user_id,))
+            rows = cur.fetchall()
+            cur.close(); cnx.close()
+            return rows
+        except Exception as e:
+            if cnx: cnx.close()
+
+    conn = sqlite3.connect(SQLITE_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT id, user_id, name, key_prefix, spend_limit, spent, is_active, created_at FROM api_keys WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 def create_user_api_key(user_id: int, name: str, spend_limit: float = 0.0) -> Dict[str, Any]:
     raw_key = generate_api_key()
     key_hash = hash_password(raw_key)
     key_prefix = raw_key[:14] + "..." + raw_key[-4:]
     key_name = name.strip() or "API Ключ"
-    
-    db_type, conn = get_db()
-    if db_type == "mysql":
-        cur = conn.cursor(dictionary=True)
-        cur.execute("""
-        INSERT INTO `api_keys` (`user_id`, `name`, `key_hash`, `key_prefix`, `spend_limit`, `spent`, `is_active`)
-        VALUES (%s, %s, %s, %s, %s, 0.0, 1)
-        """, (user_id, key_name, key_hash, key_prefix, spend_limit))
-        key_id = cur.lastrowid
-        conn.commit()
-        cur.close(); conn.close()
-    else:
-        cur = conn.cursor()
-        cur.execute("""
-        INSERT INTO api_keys (user_id, name, key_hash, key_prefix, spend_limit, spent, is_active)
-        VALUES (?, ?, ?, ?, ?, 0.0, 1)
-        """, (user_id, key_name, key_hash, key_prefix, spend_limit))
-        key_id = cur.lastrowid
-        conn.commit()
-        conn.close()
-    
-    return {
-        "id": key_id,
-        "name": key_name,
-        "raw_key": raw_key,
-        "key_prefix": key_prefix,
-        "spend_limit": spend_limit,
-        "is_active": 1
-    }
+
+    cnx = get_mysql_connection()
+    if cnx:
+        try:
+            cur = cnx.cursor()
+            cur.execute("""
+            INSERT INTO `api_keys` (`user_id`, `name`, `key_hash`, `key_prefix`, `spend_limit`, `spent`, `is_active`)
+            VALUES (%s, %s, %s, %s, %s, 0.0, 1)
+            """, (user_id, key_name, key_hash, key_prefix, spend_limit))
+            key_id = cur.lastrowid
+            cnx.commit()
+            cur.close(); cnx.close()
+            return {"id": key_id, "name": key_name, "raw_key": raw_key, "key_prefix": key_prefix, "spend_limit": spend_limit}
+        except Exception as e:
+            if cnx: cnx.close()
+
+    conn = sqlite3.connect(SQLITE_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+    INSERT INTO api_keys (user_id, name, key_hash, key_prefix, spend_limit, spent, is_active)
+    VALUES (?, ?, ?, ?, ?, 0.0, 1)
+    """, (user_id, key_name, key_hash, key_prefix, spend_limit))
+    key_id = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return {"id": key_id, "name": key_name, "raw_key": raw_key, "key_prefix": key_prefix, "spend_limit": spend_limit}
 
 def delete_user_api_key(user_id: int, key_id: int) -> bool:
-    db_type, conn = get_db()
-    if db_type == "mysql":
-        cur = conn.cursor()
-        cur.execute("DELETE FROM `api_keys` WHERE `id` = %s AND `user_id` = %s", (key_id, user_id))
-        affected = cur.rowcount
-        conn.commit()
-        cur.close(); conn.close()
-        return affected > 0
-    else:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM api_keys WHERE id = ? AND user_id = ?", (key_id, user_id))
-        affected = cur.rowcount
-        conn.commit()
-        conn.close()
-        return affected > 0
+    cnx = get_mysql_connection()
+    if cnx:
+        try:
+            cur = cnx.cursor()
+            cur.execute("DELETE FROM `api_keys` WHERE `id` = %s AND `user_id` = %s", (key_id, user_id))
+            affected = cur.rowcount
+            cnx.commit()
+            cur.close(); cnx.close()
+            return affected > 0
+        except Exception as e:
+            if cnx: cnx.close()
+
+    conn = sqlite3.connect(SQLITE_PATH)
+    cur = conn.cursor()
+    cur.execute("DELETE FROM api_keys WHERE id = ? AND user_id = ?", (key_id, user_id))
+    affected = cur.rowcount
+    conn.commit()
+    conn.close()
+    return affected > 0
 
 def get_all_models() -> List[Dict[str, Any]]:
-    db_type, conn = get_db()
-    if db_type == "mysql":
-        cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT * FROM `models` ORDER BY `is_popular` DESC, `price_input_1m` ASC")
-        rows = cur.fetchall()
-        cur.close(); conn.close()
-        return [dict(r) for r in rows]
-    else:
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM models ORDER BY is_popular DESC, price_input_1m ASC")
-        rows = cur.fetchall()
-        conn.close()
-        return [dict(r) for r in rows]
+    return [
+        {"slug": "gpt-4o", "name": "GPT-4o Omni", "provider": "OpenAI", "category": "text", "price_input_1m": 225.0, "price_output_1m": 900.0, "context_window": "128k", "description": "Флагманская мультимодальная модель от OpenAI: высокая скорость и глубокое понимание контекста", "badge": "ХИТ"},
+        {"slug": "gpt-4o-mini", "name": "GPT-4o Mini", "provider": "OpenAI", "category": "text", "price_input_1m": 13.5, "price_output_1m": 54.0, "context_window": "128k", "description": "Ультрабыстрая и экономичная модель для базовых задач и чат-ботов", "badge": "ЭКОНОМ"},
+        {"slug": "o1-preview", "name": "o1 Reasoning", "provider": "OpenAI", "category": "reasoning", "price_input_1m": 1350.0, "price_output_1m": 5400.0, "context_window": "128k", "description": "Модель глубоких рассуждений для сложных научных, математических и архитектурных задач", "badge": "PRO"},
+        {"slug": "o3-mini", "name": "o3-mini STEM", "provider": "OpenAI", "category": "reasoning", "price_input_1m": 99.0, "price_output_1m": 396.0, "context_window": "200k", "description": "Компактная reasoning модель нового поколения для точного программирования и логики", "badge": "NEW"},
+        {"slug": "claude-3-5-sonnet", "name": "Claude 3.5 Sonnet", "provider": "Anthropic", "category": "text", "price_input_1m": 270.0, "price_output_1m": 1350.0, "context_window": "200k", "description": "Лучшая в мире модель для написания сложного кода, анализа архитектуры и аналитики", "badge": "ТОП КОД"},
+        {"slug": "claude-3-5-haiku", "name": "Claude 3.5 Haiku", "provider": "Anthropic", "category": "text", "price_input_1m": 72.0, "price_output_1m": 360.0, "context_window": "200k", "description": "Молниеносная модель с высоким интеллектом для реального времени и суппорта", "badge": "БЫСТРЫЙ"},
+        {"slug": "deepseek-chat-v3", "name": "DeepSeek V3 (671B)", "provider": "DeepSeek", "category": "text", "price_input_1m": 12.0, "price_output_1m": 24.0, "context_window": "64k", "description": "Мощная открытая модель мирового уровня с рекордно низкой стоимостью токенов", "badge": "ВЫГОДА"},
+        {"slug": "deepseek-reasoner-r1", "name": "DeepSeek R1", "provider": "DeepSeek", "category": "reasoning", "price_input_1m": 49.0, "price_output_1m": 195.0, "context_window": "64k", "description": "Продвинутая модель логического вывода и рассуждений (CoT), соперник o1", "badge": "ТРЕНД"},
+        {"slug": "llama-3.3-70b", "name": "Llama 3.3 70B Instruct", "provider": "Meta", "category": "text", "price_input_1m": 28.0, "price_output_1m": 72.0, "context_window": "128k", "description": "Мощнейшая открытая модель Meta с качеством на уровне GPT-4", "badge": "OPEN"},
+        {"slug": "qwen-2.5-coder-32b", "name": "Qwen 2.5 Coder 32B", "provider": "Alibaba", "category": "code", "price_input_1m": 18.0, "price_output_1m": 54.0, "context_window": "128k", "description": "Специализированная нейросеть для генерации, рефакторинга и поиска багов в коде", "badge": "КОДИНГ"},
+        {"slug": "flux-1-schnell", "name": "FLUX.1 Schnell", "provider": "Black Forest Labs", "category": "image", "price_input_1m": 2.5, "price_output_1m": 2.5, "context_window": "1k x 1k", "description": "Генерация фотореалистичных изображений за 1-2 секунды (цена за 1 генерацию)", "badge": "БЫСТРЫЙ"},
+        {"slug": "flux-1-dev", "name": "FLUX.1 Dev HQ", "provider": "Black Forest Labs", "category": "image", "price_input_1m": 4.9, "price_output_1m": 4.9, "context_window": "2k x 2k", "description": "Максимальная детализация, точное следование тексту и анатомии (за генерацию)", "badge": "HQ"},
+        {"slug": "midjourney-v6-api", "name": "Midjourney v6.1 API", "provider": "Midjourney", "category": "image", "price_input_1m": 6.5, "price_output_1m": 6.5, "context_window": "HD/UHD", "description": "Художественные шедевры, брендинг, концепт-арт через прямой API (за генерацию)", "badge": "АРТ"},
+        {"slug": "whisper-large-v3", "name": "Whisper Large v3", "provider": "OpenAI", "category": "audio", "price_input_1m": 0.45, "price_output_1m": 0.45, "context_window": "Аудио", "description": "Сверхточное распознавание речи на 99 языках с таймкодами (цена за 1 минуту)", "badge": "АУДИО"}
+    ]
 
 def get_model_by_slug(slug: str) -> Optional[Dict[str, Any]]:
-    db_type, conn = get_db()
-    if db_type == "mysql":
-        cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT * FROM `models` WHERE `slug` = %s", (slug,))
-        row = cur.fetchone()
-        cur.close(); conn.close()
-        return dict(row) if row else None
-    else:
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM models WHERE slug = ?", (slug,))
-        row = cur.fetchone()
-        conn.close()
-        return dict(row) if row else None
+    models = get_all_models()
+    for m in models:
+        if m["slug"] == slug:
+            return m
+    return models[0] if models else None
 
 def get_user_stats(user_id: int) -> Dict[str, Any]:
-    db_type, conn = get_db()
-    if db_type == "mysql":
-        cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT `balance`, `total_spent`, `total_deposited`, `username`, `email`, `tier`, `avatar_color`, `created_at` FROM `users` WHERE `id` = %s", (user_id,))
-        user = cur.fetchone()
-        if not user:
-            cur.close(); conn.close()
-            return {}
-        cur.execute("SELECT COUNT(*) as keys_count FROM `api_keys` WHERE `user_id` = %s AND `is_active` = 1", (user_id,))
-        keys_count = cur.fetchone()["keys_count"]
-        cur.execute("SELECT COUNT(*) as req_count, COALESCE(SUM(`tokens_prompt` + `tokens_completion`), 0) as total_tokens FROM `usage_logs` WHERE `user_id` = %s", (user_id,))
-        usage_info = cur.fetchone()
-        cur.close(); conn.close()
-        if 'balance' not in user or user['balance'] is None: user['balance'] = 150.0
-        if 'total_spent' not in user or user['total_spent'] is None: user['total_spent'] = 0.0
-        if 'total_deposited' not in user or user['total_deposited'] is None: user['total_deposited'] = 0.0
-        return {
-            **dict(user),
-            "keys_count": keys_count,
-            "requests_count": usage_info["req_count"] if usage_info else 0,
-            "total_tokens": usage_info["total_tokens"] if usage_info else 0
-        }
-    else:
-        cur = conn.cursor()
-        cur.execute("SELECT balance, total_spent, total_deposited, username, email, tier, avatar_color, created_at FROM users WHERE id = ?", (user_id,))
-        user = cur.fetchone()
-        if not user:
-            conn.close()
-            return {}
-        cur.execute("SELECT COUNT(*) as keys_count FROM api_keys WHERE user_id = ? AND is_active = 1", (user_id,))
-        keys_count = cur.fetchone()["keys_count"]
-        cur.execute("SELECT COUNT(*) as req_count, COALESCE(SUM(tokens_prompt + tokens_completion), 0) as total_tokens FROM usage_logs WHERE user_id = ?", (user_id,))
-        usage_info = cur.fetchone()
-        conn.close()
-        return {
-            **dict(user),
-            "keys_count": keys_count,
-            "requests_count": usage_info["req_count"] if usage_info else 0,
-            "total_tokens": usage_info["total_tokens"] if usage_info else 0
-        }
+    user = get_user_by_id(user_id)
+    if not user:
+        return {}
+    keys = get_user_api_keys(user_id)
+    txs = get_user_transactions(user_id)
+    return {
+        **user,
+        "keys_count": len(keys),
+        "requests_count": len([t for t in txs if t.get('type') == 'usage']),
+        "total_tokens": len([t for t in txs if t.get('type') == 'usage']) * 320
+    }
