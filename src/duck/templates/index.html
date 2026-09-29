@@ -1,0 +1,366 @@
+{% extends "base.html" %}
+
+{% block title %}NeuroAPI — Единый API для нейросетей (GPT-4o, Claude 3.5, DeepSeek R1, FLUX){% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="hero-section">
+    <div class="container">
+        <div class="hero-pill">
+            <span class="badge-dot"></span>
+            <span>🚀 Версия 2.0 • Добавлены DeepSeek V3/R1, Claude 3.5 Sonnet, FLUX.1 & o3-mini</span>
+        </div>
+
+        <h1 class="hero-title">
+            Единый <span class="gradient-text">API шлюз</span> ко всем передовым нейросетям
+        </h1>
+
+        <p class="hero-subtitle">
+            Подключайте OpenAI GPT-4o, Claude 3.5 Sonnet, DeepSeek R1, Midjourney и FLUX через единый ключ. Оплата в рублях через СБП и карты РФ без зарубежных банков и VPN.
+        </p>
+
+        <div class="hero-cta">
+            {% if current_user %}
+                <a href="/dashboard" class="btn btn-primary btn-lg" style="display: flex; align-items: center; gap: 10px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                    <span>Перейти в личный кабинет</span>
+                </a>
+                <button class="btn btn-success btn-lg" onclick="openTopupModal()">
+                    💳 Пополнить баланс ({{ "%.2f"|format(current_user.balance) }} ₽)
+                </button>
+            {% else %}
+                <a href="/registration" class="btn btn-primary btn-lg" style="display: flex; align-items: center; gap: 10px;">
+                    <span>Начать бесплатно (+150 ₽ на счет)</span>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                </a>
+                <a href="/#playground-preview" class="btn btn-secondary btn-lg">
+                    🧪 Попробовать в песочнице
+                </a>
+            {% endif %}
+        </div>
+
+        <!-- Metrics -->
+        <div class="hero-stats">
+            <div class="stat-item">
+                <div class="stat-val gradient-text">17+</div>
+                <div class="stat-label">AI моделей в одном API</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-val" style="color: #34d399;">~120 ms</div>
+                <div class="stat-label">Средний отклик шлюза</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-val" style="color: #38bdf8;">0%</div>
+                <div class="stat-label">Комиссия при оплате СБП</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-val" style="color: #c084fc;">100%</div>
+                <div class="stat-label">Совместимость с OpenAI SDK</div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Playground Preview Section -->
+<section id="playground-preview" style="padding: 40px 0;">
+    <div class="container">
+        <div class="section-header">
+            <div class="section-tag">Интерактивный тест</div>
+            <h2 class="section-title">Проверьте генерацию в реальном времени</h2>
+            <p class="section-desc">Выберите модель, напишите запрос и мгновенно оцените скорость и качество генерации</p>
+        </div>
+
+        <div class="card-glass" style="max-width: 980px; margin: 0 auto; padding: 24px;">
+            <div class="playground-grid" style="grid-template-columns: 280px 1fr;">
+                <!-- Controls -->
+                <div>
+                    <div class="form-group">
+                        <label class="form-label">Нейросеть / Модель:</label>
+                        <select id="playgroundModel" class="form-control" style="font-weight: 600;">
+                            {% for m in models %}
+                                <option value="{{ m.slug }}" {% if m.slug == 'gpt-4o' %}selected{% endif %}>
+                                    {{ m.name }} ({{ m.provider }})
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Системная роль (System prompt):</label>
+                        <input type="text" id="playgroundSystemPrompt" class="form-control" placeholder="Например: Ты опытный senior-разработчик">
+                    </div>
+
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-subtle); border-radius: 10px; padding: 14px; font-size: 12px; color: var(--text-secondary); margin-bottom: 20px;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                            <span>Тарификация:</span>
+                            <span style="color: #34d399; font-weight: 700;">Pay-as-you-go</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span>Ваш баланс:</span>
+                            <span class="user-balance-value" style="color: #38bdf8; font-weight: 700;">{{ "%.2f"|format(current_user.balance) if current_user else "150.00" }} ₽</span>
+                        </div>
+                    </div>
+
+                    <button type="button" class="btn btn-primary btn-block" id="btnRunPlayground" onclick="runPlaygroundPrompt()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        <span>Запустить запрос</span>
+                    </button>
+                </div>
+
+                <!-- Input & Output -->
+                <div style="display: flex; flex-direction: column; gap: 14px;">
+                    <div>
+                        <label class="form-label">Ваш запрос к нейросети (User prompt):</label>
+                        <textarea id="playgroundPrompt" class="form-control" rows="3" placeholder="Напишите вопрос или задачу, например: Напиши функцию на Python для парсинга данных и объясни как она работает">Напиши краткий обзор преимуществ использования единого API для нейросетей</textarea>
+                    </div>
+
+                    <div class="terminal-window">
+                        <div class="terminal-header">
+                            <div class="terminal-title">
+                                <span style="width: 10px; height: 10px; border-radius: 50%; background: #10b981;"></span>
+                                <span>Ответ API (Streaming output)</span>
+                            </div>
+                            <button class="btn btn-outline btn-sm" onclick="copyToClipboard(document.getElementById('playgroundOutput').textContent)">
+                                📋 Скопировать ответ
+                            </button>
+                        </div>
+                        <div class="terminal-output" id="playgroundOutput">Нажмите «Запустить запрос», чтобы отправить prompt в нейросеть и увидеть результат в реальном времени.</div>
+                        <div class="terminal-metrics">
+                            <div>Токены: <span class="metric-val" id="metricTokens">—</span></div>
+                            <div>Стоимость: <span class="metric-val" id="metricCost">—</span></div>
+                            <div>Задержка: <span class="metric-val" id="metricLatency">—</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Models Catalog & Pricing -->
+<section id="models" class="models-section">
+    <div class="container">
+        <div class="section-header">
+            <div class="section-tag">Каталог и стоимость</div>
+            <h2 class="section-title">Все ведущие AI модели в одном каталоге</h2>
+            <p class="section-desc">Сравнивайте стоимость токенов, контекст и выбирайте оптимальную модель под ваш бюджет</p>
+        </div>
+
+        <!-- Filter bar -->
+        <div class="filter-bar">
+            <div class="category-pills">
+                <button class="cat-pill active" data-category="all" onclick="filterModels('all', this)">Все модели</button>
+                <button class="cat-pill" data-category="text" onclick="filterModels('text', this)">Языковые (LLM)</button>
+                <button class="cat-pill" data-category="reasoning" onclick="filterModels('reasoning', this)">Рассуждения (o1 / R1)</button>
+                <button class="cat-pill" data-category="image" onclick="filterModels('image', this)">Изображения (FLUX/MJ)</button>
+                <button class="cat-pill" data-category="code" onclick="filterModels('code', this)">Кодинг</button>
+                <button class="cat-pill" data-category="audio" onclick="filterModels('audio', this)">Аудио & Голос</button>
+            </div>
+
+            <div class="search-input-wrapper">
+                <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="text" id="modelSearchInput" class="search-input" placeholder="Поиск по названию или провайдеру..." oninput="searchModels(this.value)">
+            </div>
+        </div>
+
+        <!-- Grid of Models -->
+        <div class="models-grid" id="modelsGridContainer">
+            {% for m in models %}
+            <div class="model-card" data-category="{{ m.category }}" data-name="{{ m.name }}" data-provider="{{ m.provider }}">
+                <div>
+                    <div class="model-card-header">
+                        <div>
+                            <div class="model-name">{{ m.name }}</div>
+                            <div class="model-provider">
+                                <span>Провайдер:</span>
+                                <strong style="color: var(--text-primary);">{{ m.provider }}</strong>
+                            </div>
+                        </div>
+                        {% if m.badge %}
+                            <span class="model-badge {% if m.badge in ['ХИТ', 'ТРЕНД'] %}badge-hit{% elif m.badge in ['PRO', 'HQ'] %}badge-pro{% elif m.badge in ['ЭКОНОМ', 'ВЫГОДА'] %}badge-eco{% else %}badge-new{% endif %}">
+                                {{ m.badge }}
+                            </span>
+                        {% endif %}
+                    </div>
+
+                    <div class="model-desc">{{ m.description }}</div>
+                </div>
+
+                <div>
+                    <div class="model-meta">
+                        <div class="meta-item">
+                            <span class="meta-label">Вход (Prompt)</span>
+                            <span class="meta-val price">
+                                {% if m.category == 'image' %}
+                                    {{ m.price_input_1m }} ₽ / шт
+                                {% elif m.category == 'audio' %}
+                                    {{ m.price_input_1m }} ₽ / мин
+                                {% else %}
+                                    {{ m.price_input_1m }} ₽ <small style="font-size:10px; color:var(--text-muted);">/1M токенов</small>
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Выход (Completion)</span>
+                            <span class="meta-val price">
+                                {% if m.category in ['image', 'audio'] %}
+                                    —
+                                {% else %}
+                                    {{ m.price_output_1m }} ₽ <small style="font-size:10px; color:var(--text-muted);">/1M токенов</small>
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Контекст</span>
+                            <span class="meta-val">{{ m.context_window }}</span>
+                        </div>
+                    </div>
+
+                    <div class="model-card-footer">
+                        <button class="btn btn-outline btn-sm btn-block" onclick="selectModelInPlayground('{{ m.slug }}')">
+                            Тестировать
+                        </button>
+                        <button class="btn btn-secondary btn-sm" onclick="copyToClipboard('{{ m.slug }}', 'Имя модели «{{ m.slug }}» скопировано!')" title="Скопировать ID модели">
+                            📋
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+<!-- Advantages Grid -->
+<section style="padding: 60px 0; background: rgba(0,0,0,0.2);">
+    <div class="container">
+        <div class="section-header">
+            <div class="section-tag">Преимущества</div>
+            <h2 class="section-title">Создан для разработчиков и бизнеса</h2>
+            <p class="section-desc">Все необходимые инструменты для интеграции AI без бюрократии и ограничений</p>
+        </div>
+
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon-wrapper">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+                </div>
+                <h3>Пополнение в рублях без VPN</h3>
+                <p>Оплачивайте баланс привычными российскими способами: СБП по QR-коду, банковскими картами МИР, а также криптовалютой USDT/TON.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon-wrapper">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                </div>
+                <h3>Drop-in замена OpenAI SDK</h3>
+                <p>Не нужно переписывать ваш код. Просто укажите <code>base_url="https://api.neuroapi.io/v1"</code> и используйте официальные библиотеки.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon-wrapper">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                </div>
+                <h3>Единый баланс на все модели</h3>
+                <p>Больше никаких отдельных подписок и сотен аккаунтов. Один депозит расходуется на любые модели строго по факту использованных токенов.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon-wrapper">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
+                </div>
+                <h3>Сверхнизкая задержка и Uptime 99.98%</h3>
+                <p>Кластеры с автоматической балансировкой нагрузки, резервированием каналов и прямыми подключениями к серверам инференса.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon-wrapper">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+                </div>
+                <h3>Управление API ключами</h3>
+                <p>Создавайте отдельные ключи для разных проектов, задавайте лимиты расходов и отслеживайте аналитику по каждому сервису.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon-wrapper">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                </div>
+                <h3>Бонусы до +15% при пополнении</h3>
+                <p>Получайте повышенный кэшбэк на баланс при пополнении от 2 500 ₽, а также регулярные промокоды для разработчиков.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- Code Integration Showcase -->
+<section style="padding: 60px 0;">
+    <div class="container">
+        <div class="section-header">
+            <div class="section-tag">Интеграция за 1 минуту</div>
+            <h2 class="section-title">Подключение на любом языке программирования</h2>
+            <p class="section-desc">Скопируйте готовый пример для вашего стека и отправьте первый запрос прямо сейчас</p>
+        </div>
+
+        <div class="code-showcase">
+            <div class="code-header">
+                <div class="code-tabs">
+                    <button class="code-tab active" onclick="switchCodeTab('python', this)">Python</button>
+                    <button class="code-tab" onclick="switchCodeTab('javascript', this)">Node.js / TypeScript</button>
+                    <button class="code-tab" onclick="switchCodeTab('curl', this)">cURL</button>
+                    <button class="code-tab" onclick="switchCodeTab('php', this)">PHP</button>
+                    <button class="code-tab" onclick="switchCodeTab('go', this)">Go</button>
+                </div>
+
+                <button class="btn btn-outline btn-sm" onclick="copyToClipboard(document.getElementById('codeShowcaseBody').textContent, 'Код скопирован!')">
+                    📋 Скопировать код
+                </button>
+            </div>
+            <div class="code-body" id="codeShowcaseBody">import openai
+
+client = openai.OpenAI(
+    api_key="sk-neuro-YOUR_API_KEY",
+    base_url="https://api.neuroapi.io/v1"
+)
+
+response = client.chat.completions.create(
+    model="gpt-4o",  # или claude-3-5-sonnet, deepseek-chat-v3, flux-1-schnell
+    messages=[
+        {"role": "system", "content": "Ты экспертный AI-ассистент."},
+        {"role": "user", "content": "Напиши архитектуру высоконагруженного сервиса."}
+    ],
+    temperature=0.7
+)
+
+print(response.choices[0].message.content)</div>
+        </div>
+    </div>
+</section>
+
+<!-- CTA Bottom Banner -->
+<section style="padding: 60px 0 80px;">
+    <div class="container">
+        <div class="card-glass" style="text-align: center; padding: 48px 24px; background: linear-gradient(135deg, rgba(99,102,241,0.15) 0%, rgba(6,182,212,0.12) 100%); border-color: rgba(99,102,241,0.3);">
+            <h2 style="font-size: 34px; margin-bottom: 14px;">Готовы внедрить AI в свои продукты?</h2>
+            <p style="font-size: 16px; color: var(--text-secondary); max-width: 600px; margin: 0 auto 28px;">
+                Зарегистрируйтесь прямо сейчас и получите <strong>150 ₽ на баланс</strong> для бесплатного тестирования любых нейросетей.
+            </p>
+            <div style="display: flex; justify-content: center; gap: 14px; flex-wrap: wrap;">
+                <a href="/registration" class="btn btn-primary btn-lg">Зарегистрироваться (+150 ₽)</a>
+                <a href="/pricing" class="btn btn-secondary btn-lg">Смотреть все тарифы</a>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function selectModelInPlayground(slug) {
+    const sel = document.getElementById('playgroundModel');
+    if (sel) {
+        sel.value = slug;
+        document.getElementById('playground-preview').scrollIntoView({ behavior: 'smooth' });
+    }
+}
+</script>
+{% endblock %}
