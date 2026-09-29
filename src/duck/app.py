@@ -4,6 +4,7 @@ import random
 import re
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, g
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from duck import db
 
@@ -12,6 +13,9 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "neuroapi-super-secret-key-2
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = False
+
+# Support reverse proxy headers (X-Forwarded-For, X-Forwarded-Proto, X-Forwarded-Host)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
 # Initialize SQLite database on startup
 db.init_db()
