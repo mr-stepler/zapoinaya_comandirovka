@@ -1,21 +1,29 @@
-// Auth forms handler (Login / Registration)
-$(document).ready(function(){
-    $('#auth-form, #67').on('submit', function(e){
+// Native Vanilla JS Auth Forms Handler (No jQuery required)
+document.addEventListener('DOMContentLoaded', function () {
+    const authForm = document.getElementById('auth-form') || document.getElementById('67');
+    if (!authForm) return;
+
+    authForm.addEventListener('submit', async function (e) {
         e.preventDefault();
-        
-        var isRegistration = $('#confirm_password').length > 0;
-        var submitBtn = $(this).find('button[type="submit"]');
-        var originalBtnText = submitBtn.text();
+
+        const isRegistration = !!document.getElementById('confirm_password');
+        const submitBtn = authForm.querySelector('button[type="submit"]');
+        const originalBtnText = submitBtn ? submitBtn.innerText : '';
 
         if (isRegistration) {
-            // ---- Регистрация ----
-            var name = $('#fullname').val().trim();
-            var email = $('#email').val().trim();
-            var password = $('#password').val().trim();
-            var confirmPassword = $('#confirm_password').val().trim();
-            var promo = $('#promo_code').length ? $('#promo_code').val().trim() : '';
+            const fullnameElem = document.getElementById('fullname');
+            const emailElem = document.getElementById('email');
+            const passwordElem = document.getElementById('password');
+            const confirmPassElem = document.getElementById('confirm_password');
+            const promoElem = document.getElementById('promo_code');
 
-            if (name === '' || email === '' || password === '') {
+            const name = fullnameElem ? fullnameElem.value.trim() : '';
+            const email = emailElem ? emailElem.value.trim() : '';
+            const password = passwordElem ? passwordElem.value.trim() : '';
+            const confirmPassword = confirmPassElem ? confirmPassElem.value.trim() : '';
+            const promo = promoElem ? promoElem.value.trim() : '';
+
+            if (!name || !email || !password) {
                 if (typeof showToast === 'function') {
                     showToast('Заполните все обязательные поля', 'error');
                 } else {
@@ -35,46 +43,69 @@ $(document).ready(function(){
 
             if (password.length < 4) {
                 if (typeof showToast === 'function') {
-                    showToast('Пароль должен содержать от 4 символов', 'error');
+                    showToast('Пароль должен быть не менее 4 символов', 'error');
                 } else {
-                    alert('Пароль должен содержать от 4 символов');
+                    alert('Пароль должен быть не менее 4 символов');
                 }
                 return;
             }
 
-            submitBtn.prop('disabled', true).text('Регистрация...');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerText = 'Регистрация...';
+            }
 
-            $.ajax({
-                url: '/user_register',
-                method: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({
-                    name: name,
-                    email: email,
-                    password: password,
-                    promo_code: promo
-                })
-            }).done(function(res){
-                if (typeof showToast === 'function') {
-                    showToast('Регистрация успешна! Начислен бонус 150 ₽', 'success');
-                }
-                window.location.href = res.redirect || ("/welcome?name=" + encodeURIComponent(name));
-            }).fail(function(xhr){
-                submitBtn.prop('disabled', false).text(originalBtnText);
-                var err = xhr.responseJSON?.error || 'Ошибка при регистрации';
-                if (typeof showToast === 'function') {
-                    showToast(err, 'error');
+            try {
+                const res = await fetch('/user_register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: name,
+                        email: email,
+                        password: password,
+                        promo_code: promo
+                    })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    if (typeof showToast === 'function') {
+                        showToast('Регистрация успешна! Начислен бонус 150 ₽', 'success');
+                    }
+                    window.location.href = data.redirect || ('/welcome?name=' + encodeURIComponent(name));
                 } else {
-                    alert(err);
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerText = originalBtnText;
+                    }
+                    const err = data.error || 'Ошибка регистрации';
+                    if (typeof showToast === 'function') {
+                        showToast(err, 'error');
+                    } else {
+                        alert(err);
+                    }
                 }
-            });
+            } catch (err) {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = originalBtnText;
+                }
+                if (typeof showToast === 'function') {
+                    showToast('Ошибка сети при регистрации', 'error');
+                } else {
+                    alert('Ошибка сети при регистрации');
+                }
+            }
 
         } else {
-            // ---- Вход ----
-            var loginEmail = $('#email').val().trim();
-            var loginPassword = $('#password').val().trim();
+            // Login flow
+            const emailElem = document.getElementById('email');
+            const passwordElem = document.getElementById('password');
 
-            if (loginEmail === '' || loginPassword === '') {
+            const email = emailElem ? emailElem.value.trim() : '';
+            const password = passwordElem ? passwordElem.value.trim() : '';
+
+            if (!email || !password) {
                 if (typeof showToast === 'function') {
                     showToast('Введите email и пароль', 'error');
                 } else {
@@ -83,30 +114,50 @@ $(document).ready(function(){
                 return;
             }
 
-            submitBtn.prop('disabled', true).text('Вход в систему...');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerText = 'Вход...';
+            }
 
-            $.ajax({
-                url: '/user_login',
-                method: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({
-                    email: loginEmail,
-                    password: loginPassword
-                })
-            }).done(function(response){
-                if (typeof showToast === 'function') {
-                    showToast(response.message || 'Успешный вход!', 'success');
-                }
-                window.location.href = response.redirect || "/dashboard";
-            }).fail(function(xhr){
-                submitBtn.prop('disabled', false).text(originalBtnText);
-                var err = xhr.responseJSON?.error || 'Неверный логин или пароль';
-                if (typeof showToast === 'function') {
-                    showToast(err, 'error');
+            try {
+                const res = await fetch('/user_login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: email,
+                        password: password
+                    })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    if (typeof showToast === 'function') {
+                        showToast(data.message || 'Успешный вход!', 'success');
+                    }
+                    window.location.href = data.redirect || '/dashboard';
                 } else {
-                    alert(err);
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.innerText = originalBtnText;
+                    }
+                    const err = data.error || 'Неверный email или пароль';
+                    if (typeof showToast === 'function') {
+                        showToast(err, 'error');
+                    } else {
+                        alert(err);
+                    }
                 }
-            });
+            } catch (err) {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = originalBtnText;
+                }
+                if (typeof showToast === 'function') {
+                    showToast('Ошибка сети при входе', 'error');
+                } else {
+                    alert('Ошибка сети при входе');
+                }
+            }
         }
     });
 });

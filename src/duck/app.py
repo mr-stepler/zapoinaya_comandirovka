@@ -37,6 +37,15 @@ def inject_user():
     user = get_current_user()
     return dict(current_user=user)
 
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Frame-Options'] = 'ALLOWALL'
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Content-Security-Policy'] = "frame-ancestors *;"
+    return response
+
 # -------------------------------------------------------------
 # WEB PAGES
 # -------------------------------------------------------------
