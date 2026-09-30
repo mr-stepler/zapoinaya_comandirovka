@@ -1,0 +1,656 @@
+{% extends "base.html" %}
+
+{% block title %}Личный кабинет — NeuroAPI{% endblock %}
+
+{% block content %}
+<div class="container" style="padding-top: 30px; padding-bottom: 60px;">
+
+    <!-- Top Greeting & KPI Row -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 16px;">
+        <div style="display: flex; align-items: center; gap: 16px;">
+            <div style="width: 52px; height: 52px; border-radius: 50%; background: {{ user.avatar_color or '#6366f1' }}; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; color: white; box-shadow: 0 0 20px var(--primary-glow);">
+                {{ user.username[:1].upper() }}
+            </div>
+            <div>
+                <h1 style="font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">{{ user.username }}</h1>
+                <div style="font-size: 13px; color: var(--text-secondary); display: flex; align-items: center; gap: 8px;">
+                    <span>{{ user.email }}</span>
+                    <span>•</span>
+                    <span style="background: rgba(99,102,241,0.15); color: #a5b4fc; padding: 2px 8px; border-radius: 6px; font-weight: 600; font-size: 11px;">{{ user.tier or 'Developer' }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div style="display: flex; gap: 10px;">
+            <button class="btn btn-success" onclick="openTopupModal()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+                <span>Пополнить баланс</span>
+            </button>
+            <button class="btn btn-outline" onclick="openCreateKeyModal()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span>Новый API ключ</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Summary KPI Cards -->
+    <div class="dash-summary-grid" style="margin-bottom: 30px;">
+        <!-- Card 1: Balance -->
+        <div class="dash-summary-card" style="border-color: rgba(16, 185, 129, 0.3); background: linear-gradient(135deg, rgba(18, 26, 43, 0.8) 0%, rgba(16, 185, 129, 0.08) 100%);">
+            <div class="card-icon-corner" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+            </div>
+            <div class="dash-card-title">Текущий баланс</div>
+            <div class="dash-card-value user-balance-value" style="color: #34d399;">{{ "%.2f"|format(user.balance) }} ₽</div>
+            <div class="dash-card-sub">
+                <a href="javascript:void(0)" onclick="openTopupModal()" style="color: #10b981; font-weight: 600; text-decoration: underline;">+ Пополнить счет</a>
+                <span>или активировать промокод ниже</span>
+            </div>
+        </div>
+
+        <!-- Card 2: Spent -->
+        <div class="dash-summary-card">
+            <div class="card-icon-corner" style="background: rgba(99, 102, 241, 0.15); color: #818cf8;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+            <div class="dash-card-title">Израсходовано</div>
+            <div class="dash-card-value">{{ "%.2f"|format(user.total_spent) }} ₽</div>
+            <div class="dash-card-sub">Всего пополнений: <strong>{{ "%.2f"|format(user.total_deposited) }} ₽</strong></div>
+        </div>
+
+        <!-- Card 3: API Keys -->
+        <div class="dash-summary-card">
+            <div class="card-icon-corner" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+            </div>
+            <div class="dash-card-title">API Ключи</div>
+            <div class="dash-card-value">{{ stats.keys_count or api_keys|length }}</div>
+            <div class="dash-card-sub">
+                <a href="javascript:void(0)" onclick="switchDashTab('keys')" style="color: #38bdf8; font-weight: 600;">Управление ключами →</a>
+            </div>
+        </div>
+
+        <!-- Card 4: Requests -->
+        <div class="dash-summary-card">
+            <div class="card-icon-corner" style="background: rgba(168, 85, 247, 0.15); color: #c084fc;">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            </div>
+            <div class="dash-card-title">Вызовы API</div>
+            <div class="dash-card-value">{{ stats.requests_count or 0 }}</div>
+            <div class="dash-card-sub">Использовано токенов: <strong>{{ stats.total_tokens or 0 }}</strong></div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard Layout with Sidebar Navigation -->
+    <div class="dashboard-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar-nav">
+            <ul class="sidebar-menu">
+                <li class="sidebar-item active" id="menu-overview">
+                    <a href="javascript:void(0)" onclick="switchDashTab('overview')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                        <span>Обзор</span>
+                    </a>
+                </li>
+                <li class="sidebar-item" id="menu-billing">
+                    <a href="javascript:void(0)" onclick="switchDashTab('billing')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+                        <span>Финансы & Баланс</span>
+                    </a>
+                </li>
+                <li class="sidebar-item" id="menu-keys">
+                    <a href="javascript:void(0)" onclick="switchDashTab('keys')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+                        <span>API Ключи</span>
+                    </a>
+                </li>
+                <li class="sidebar-item" id="menu-playground">
+                    <a href="javascript:void(0)" onclick="switchDashTab('playground')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        <span>AI Песочница</span>
+                    </a>
+                </li>
+                <li class="sidebar-item" id="menu-models">
+                    <a href="javascript:void(0)" onclick="switchDashTab('models')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+                        <span>Каталог & Тарифы</span>
+                    </a>
+                </li>
+                <li class="sidebar-item" id="menu-docs">
+                    <a href="javascript:void(0)" onclick="switchDashTab('docs')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        <span>Интеграция</span>
+                    </a>
+                </li>
+            </ul>
+        </aside>
+
+        <!-- Main Tab Contents -->
+        <div class="dashboard-content">
+
+            <!-- TAB 1: OVERVIEW -->
+            <div id="tab-overview" class="dash-tab-pane">
+                <div class="card-glass" style="margin-bottom: 24px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <div>
+                            <h2 style="font-size: 20px; font-weight: 700;">Быстрый старт</h2>
+                            <p style="font-size: 13px; color: var(--text-secondary);">Как начать отправлять запросы в нейросети прямо сейчас</p>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+                        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 18px;">
+                            <div style="font-size: 12px; font-weight: 800; color: #818cf8; margin-bottom: 6px;">ШАГ 1</div>
+                            <div style="font-weight: 700; margin-bottom: 4px;">Скопируйте API ключ</div>
+                            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">Используйте его в заголовке Authorization: Bearer</div>
+                            <button class="btn btn-outline btn-sm btn-block" onclick="switchDashTab('keys')">Мои ключи</button>
+                        </div>
+
+                        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 18px;">
+                            <div style="font-size: 12px; font-weight: 800; color: #34d399; margin-bottom: 6px;">ШАГ 2</div>
+                            <div style="font-weight: 700; margin-bottom: 4px;">Пополните баланс</div>
+                            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">СБП 0% или картами РФ с бонусами до +15%</div>
+                            <button class="btn btn-success btn-sm btn-block" onclick="openTopupModal()">Пополнить счет</button>
+                        </div>
+
+                        <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 18px;">
+                            <div style="font-size: 12px; font-weight: 800; color: #38bdf8; margin-bottom: 6px;">ШАГ 3</div>
+                            <div style="font-weight: 700; margin-bottom: 4px;">Протестируйте модели</div>
+                            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;">Запустите промпты в песочнице с замером скорости</div>
+                            <button class="btn btn-primary btn-sm btn-block" onclick="switchDashTab('playground')">Открыть песочницу</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Transactions Mini Table -->
+                <div class="card-glass">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <h2 style="font-size: 18px; font-weight: 700;">Последние операции</h2>
+                        <a href="javascript:void(0)" onclick="switchDashTab('billing')" style="font-size: 13px; color: var(--primary);">Все операции →</a>
+                    </div>
+
+                    {% if transactions %}
+                    <div class="table-responsive">
+                        <table class="custom-table">
+                            <thead>
+                                <tr>
+                                    <th>Дата и время</th>
+                                    <th>Описание операции</th>
+                                    <th>Метод</th>
+                                    <th>Сумма</th>
+                                    <th>Статус</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for tx in transactions[:5] %}
+                                <tr>
+                                    <td style="color: var(--text-muted); font-size: 13px;">{{ tx.created_at }}</td>
+                                    <td style="font-weight: 600;">{{ tx.description }}</td>
+                                    <td>
+                                        <span style="font-size: 12px; color: var(--text-secondary); text-transform: uppercase;">{{ tx.payment_method }}</span>
+                                    </td>
+                                    <td>
+                                        {% if tx.amount > 0 %}
+                                            <span style="color: #34d399; font-weight: 700;">+{{ "%.2f"|format(tx.amount) }} ₽</span>
+                                        {% else %}
+                                            <span style="color: #fb7185; font-weight: 700;">{{ "%.2f"|format(tx.amount) }} ₽</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span style="color: #34d399; font-size: 12px; font-weight: 700;">✓ {{ tx.status }}</span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                        <div style="text-align: center; padding: 30px; color: var(--text-secondary);">Операций пока нет. Пополните баланс для начала работы!</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- TAB 2: BILLING & TOP-UP -->
+            <div id="tab-billing" class="dash-tab-pane" style="display: none;">
+                <div class="card-glass" style="margin-bottom: 24px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+                        <div>
+                            <h2 style="font-size: 20px; font-weight: 700;">Пополнение счета</h2>
+                            <p style="font-size: 13px; color: var(--text-secondary);">Выберите сумму и удобный способ оплаты (0% комиссии через СБП)</p>
+                        </div>
+                        <button class="btn btn-success" onclick="openTopupModal()">
+                            💳 Пополнить баланс онлайн
+                        </button>
+                    </div>
+
+                    <!-- Promo Code Box -->
+                    <div style="background: rgba(99, 102, 241, 0.08); border: 1px dashed rgba(99, 102, 241, 0.4); border-radius: 12px; padding: 20px; margin-bottom: 24px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+                            <div>
+                                <div style="font-weight: 700; color: #a5b4fc; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+                                    <span>🎁 Есть промокод на скидку или бонус?</span>
+                                </div>
+                                <div style="font-size: 13px; color: var(--text-secondary);">Введите промокод (например <code>NEURO2026</code> или <code>DEV500</code>) для мгновенного начисления бонусных средств.</div>
+                            </div>
+
+                            <div class="input-group" style="max-width: 380px; width: 100%;">
+                                <input type="text" id="promoCodeInput" class="form-control" placeholder="Введите промокод..." style="text-transform: uppercase; font-weight: bold;">
+                                <button type="button" class="btn btn-primary" id="btnApplyPromo" onclick="applyPromoCode()">Активировать</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Balance Top-up Presets Row -->
+                    <div class="presets-grid">
+                        <div class="preset-chip" onclick="openTopupModal(300)">
+                            <div class="preset-amount">300 ₽</div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Базовый тест</div>
+                        </div>
+                        <div class="preset-chip" onclick="openTopupModal(500)">
+                            <div class="preset-amount">500 ₽</div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Стандарт</div>
+                        </div>
+                        <div class="preset-chip selected" onclick="openTopupModal(1000)">
+                            <div class="preset-amount">1 000 ₽</div>
+                            <div style="font-size: 11px; color: #a5b4fc; margin-top: 4px;">Популярный</div>
+                        </div>
+                        <div class="preset-chip" onclick="openTopupModal(2500)">
+                            <div class="preset-amount">2 500 ₽</div>
+                            <div class="preset-bonus">+5% бонус</div>
+                        </div>
+                        <div class="preset-chip" onclick="openTopupModal(5000)">
+                            <div class="preset-amount">5 000 ₽</div>
+                            <div class="preset-bonus">+10% бонус</div>
+                        </div>
+                        <div class="preset-chip" onclick="openTopupModal(10000)">
+                            <div class="preset-amount">10 000 ₽</div>
+                            <div class="preset-bonus">+15% бонус</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Full Transaction History Table -->
+                <div class="card-glass">
+                    <h2 style="font-size: 18px; font-weight: 700; margin-bottom: 16px;">История транзакций и списаний</h2>
+
+                    <div class="table-responsive">
+                        <table class="custom-table">
+                            <thead>
+                                <tr>
+                                    <th>ID операции</th>
+                                    <th>Дата и время</th>
+                                    <th>Тип</th>
+                                    <th>Метод</th>
+                                    <th>Описание</th>
+                                    <th>Сумма (₽)</th>
+                                    <th>Статус</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for tx in transactions %}
+                                <tr>
+                                    <td style="font-family: var(--font-mono); font-size: 12px; color: var(--text-muted);">{{ tx.reference_id or 'TX-' ~ tx.id }}</td>
+                                    <td style="color: var(--text-muted); font-size: 13px;">{{ tx.created_at }}</td>
+                                    <td>
+                                        {% if tx.type == 'topup' %}
+                                            <span style="background: rgba(16, 185, 129, 0.15); color: #34d399; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Пополнение</span>
+                                        {% elif tx.type == 'bonus' %}
+                                            <span style="background: rgba(99, 102, 241, 0.15); color: #a5b4fc; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Бонус</span>
+                                        {% else %}
+                                            <span style="background: rgba(244, 63, 94, 0.15); color: #fb7185; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700;">Расход API</span>
+                                        {% endif %}
+                                    </td>
+                                    <td style="text-transform: uppercase; font-size: 12px;">{{ tx.payment_method }}</td>
+                                    <td style="font-weight: 600;">{{ tx.description }}</td>
+                                    <td>
+                                        {% if tx.amount > 0 %}
+                                            <span style="color: #34d399; font-weight: 700;">+{{ "%.2f"|format(tx.amount) }} ₽</span>
+                                        {% else %}
+                                            <span style="color: #fb7185; font-weight: 700;">{{ "%.2f"|format(tx.amount) }} ₽</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span style="color: #34d399; font-size: 12px; font-weight: 700;">✓ {{ tx.status }}</span>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="7" style="text-align: center; padding: 30px; color: var(--text-secondary);">
+                                        История транзакций пуста
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 3: API KEYS -->
+            <div id="tab-keys" class="dash-tab-pane" style="display: none;">
+                <div class="card-glass">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+                        <div>
+                            <h2 style="font-size: 20px; font-weight: 700;">Секретные API Ключи</h2>
+                            <p style="font-size: 13px; color: var(--text-secondary);">Используйте API ключи для авторизации запросов ваших ботов и сервисов</p>
+                        </div>
+                        <button class="btn btn-primary" onclick="openCreateKeyModal()">
+                            + Создать новый ключ
+                        </button>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="custom-table">
+                            <thead>
+                                <tr>
+                                    <th>Название</th>
+                                    <th>Префикс ключа</th>
+                                    <th>Лимит</th>
+                                    <th>Израсходовано</th>
+                                    <th>Создан</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for k in api_keys %}
+                                <tr id="key-row-{{ k.id }}">
+                                    <td style="font-weight: 700;">{{ k.name }}</td>
+                                    <td>
+                                        <code style="font-family: var(--font-mono); background: #080c14; padding: 4px 8px; border-radius: 6px; color: #38bdf8; border: 1px solid var(--border-subtle);">{{ k.key_prefix }}</code>
+                                    </td>
+                                    <td>{{ "%.2f"|format(k.spend_limit) ~ " ₽" if k.spend_limit > 0 else "Без лимита" }}</td>
+                                    <td style="color: var(--text-secondary);">{{ "%.2f"|format(k.spent) }} ₽</td>
+                                    <td style="color: var(--text-muted); font-size: 13px;">{{ k.created_at }}</td>
+                                    <td>
+                                        <button class="btn btn-outline btn-sm" style="color: #fb7185; border-color: rgba(244, 63, 94, 0.3);" onclick="deleteApiKey({{ k.id }})" title="Отозвать ключ">
+                                            Удалить
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="6" style="text-align: center; padding: 30px; color: var(--text-secondary);">
+                                        У вас пока нет активных API ключей. Нажмите «Создать новый ключ».
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Security Alert -->
+                    <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 12px; padding: 16px; margin-top: 24px; display: flex; gap: 12px; align-items: flex-start;">
+                        <span style="font-size: 20px;">🔒</span>
+                        <div style="font-size: 13px; color: #fbbf24; line-height: 1.5;">
+                            <strong>Безопасность API ключей:</strong> Никогда не публикуйте свои ключи в публичных репозиториях GitHub или клиентском JavaScript-коде. Храните их в переменных окружения <code>.env</code>.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 4: PLAYGROUND -->
+            <div id="tab-playground" class="dash-tab-pane" style="display: none;">
+                <div class="card-glass">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <div>
+                            <h2 style="font-size: 20px; font-weight: 700;">AI Песочница (Playground)</h2>
+                            <p style="font-size: 13px; color: var(--text-secondary);">Интерактивная панель для отладки промптов и тестирования моделей</p>
+                        </div>
+                        <div class="balance-pill" onclick="openTopupModal()">
+                            <span class="user-balance-value balance-amount">{{ "%.2f"|format(user.balance) }} ₽</span>
+                            <span class="btn-topup-mini">+ Пополнить</span>
+                        </div>
+                    </div>
+
+                    <div class="playground-grid">
+                        <!-- Left settings -->
+                        <div class="playground-panel">
+                            <div class="form-group">
+                                <label class="form-label">Модель нейросети:</label>
+                                <select id="dashPlaygroundModel" class="form-control" style="font-weight: 600;">
+                                    {% for m in models %}
+                                        <option value="{{ m.slug }}" {% if m.slug == 'gpt-4o' %}selected{% endif %}>
+                                            {{ m.name }} ({{ m.provider }})
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Системный промпт (System):</label>
+                                <textarea id="dashPlaygroundSystemPrompt" class="form-control" style="min-height: 80px;" placeholder="Ты квалифицированный ассистент по архитектуре ПО. Отвечай емко и точно."></textarea>
+                            </div>
+
+                            <div class="form-group">
+                                <label class="form-label">Температура (Креативность): <span id="tempVal" style="color: #38bdf8;">0.7</span></label>
+                                <input type="range" class="form-control" style="padding: 0;" min="0" max="2" step="0.1" value="0.7" oninput="document.getElementById('tempVal').textContent = this.value">
+                            </div>
+
+                            <button type="button" class="btn btn-primary btn-block" id="btnRunDashPlayground" onclick="runDashPlayground()">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                <span>Отправить запрос</span>
+                            </button>
+                        </div>
+
+                        <!-- Right Output -->
+                        <div style="display: flex; flex-direction: column; gap: 14px;">
+                            <div>
+                                <label class="form-label">Пользовательский промпт (User):</label>
+                                <textarea id="dashPlaygroundPrompt" class="form-control" rows="4" placeholder="Введите ваш вопрос или промпт для генерации...">Напиши оптимизированный асинхронный клиент на Python для работы с NeuroAPI</textarea>
+                            </div>
+
+                            <div class="terminal-window">
+                                <div class="terminal-header">
+                                    <div class="terminal-title">
+                                        <span style="width: 10px; height: 10px; border-radius: 50%; background: #10b981;"></span>
+                                        <span>Результат генерации</span>
+                                    </div>
+                                    <button class="btn btn-outline btn-sm" onclick="copyToClipboard(document.getElementById('dashPlaygroundOutput').textContent)">
+                                        📋 Скопировать ответ
+                                    </button>
+                                </div>
+                                <div class="terminal-output" id="dashPlaygroundOutput">Готов к отправке запроса. Нажмите «Отправить запрос» для получения ответа от выбранной нейросети.</div>
+                                <div class="terminal-metrics">
+                                    <div>Токены: <span class="metric-val" id="dashMetricTokens">—</span></div>
+                                    <div>Списано: <span class="metric-val" id="dashMetricCost">—</span></div>
+                                    <div>Задержка: <span class="metric-val" id="dashMetricLatency">—</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 5: MODELS CATALOG -->
+            <div id="tab-models" class="dash-tab-pane" style="display: none;">
+                <div class="card-glass">
+                    <h2 style="font-size: 20px; font-weight: 700; margin-bottom: 16px;">Каталог и актуальные тарифы</h2>
+
+                    <div class="table-responsive">
+                        <table class="custom-table">
+                            <thead>
+                                <tr>
+                                    <th>Модель</th>
+                                    <th>Провайдер</th>
+                                    <th>Категория</th>
+                                    <th>Вход (Prompt)</th>
+                                    <th>Выход (Completion)</th>
+                                    <th>Контекст</th>
+                                    <th>Действие</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for m in models %}
+                                <tr>
+                                    <td>
+                                        <div style="font-weight: 700;">{{ m.name }}</div>
+                                        <div style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">{{ m.slug }}</div>
+                                    </td>
+                                    <td>{{ m.provider }}</td>
+                                    <td>
+                                        <span style="background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 4px; font-size: 11px; text-transform: uppercase;">{{ m.category }}</span>
+                                    </td>
+                                    <td style="color: #34d399; font-weight: 700;">
+                                        {% if m.category == 'image' %}
+                                            {{ m.price_input_1m }} ₽ / шт
+                                        {% elif m.category == 'audio' %}
+                                            {{ m.price_input_1m }} ₽ / мин
+                                        {% else %}
+                                            {{ m.price_input_1m }} ₽ <small style="color:var(--text-muted); font-size:10px;">/1M</small>
+                                        {% endif %}
+                                    </td>
+                                    <td style="color: #38bdf8; font-weight: 700;">
+                                        {% if m.category in ['image', 'audio'] %}
+                                            —
+                                        {% else %}
+                                            {{ m.price_output_1m }} ₽ <small style="color:var(--text-muted); font-size:10px;">/1M</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ m.context_window }}</td>
+                                    <td>
+                                        <button class="btn btn-outline btn-sm" onclick="launchInPlayground('{{ m.slug }}')">В песочницу</button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 6: DOCS & INTEGRATION -->
+            <div id="tab-docs" class="dash-tab-pane" style="display: none;">
+                <div class="card-glass">
+                    <h2 style="font-size: 20px; font-weight: 700; margin-bottom: 8px;">Быстрая интеграция в ваш проект</h2>
+                    <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 24px;">Используйте стандартные клиенты OpenAI или прямые HTTP-запросы</p>
+
+                    <h3 style="font-size: 16px; margin-bottom: 12px; color: #a5b4fc;">1. Базовый URL и заголовки</h3>
+                    <div style="background: #080c14; border: 1px solid var(--border-subtle); border-radius: 10px; padding: 14px; font-family: var(--font-mono); font-size: 13px; margin-bottom: 20px;">
+                        <div><span style="color: #64748b;">Endpoint:</span> <strong style="color: #38bdf8;">https://api.neuroapi.io/v1/chat/completions</strong></div>
+                        <div style="margin-top: 4px;"><span style="color: #64748b;">Authorization:</span> <strong style="color: #34d399;">Bearer {{ api_keys[0].key_prefix if api_keys else 'sk-neuro-YOUR_KEY' }}</strong></div>
+                    </div>
+
+                    <h3 style="font-size: 16px; margin-bottom: 12px; color: #a5b4fc;">2. Пример на Python (OpenAI SDK)</h3>
+                    <div class="code-showcase" style="margin: 0 0 24px;">
+                        <div class="code-body">import openai
+
+client = openai.OpenAI(
+    api_key="{% if api_keys %}{{ api_keys[0].key_prefix }}{% else %}sk-neuro-YOUR_API_KEY{% endif %}",
+    base_url="https://api.neuroapi.io/v1"
+)
+
+response = client.chat.completions.create(
+    model="deepseek-chat-v3",
+    messages=[
+        {"role": "user", "content": "Как оптимизировать SQL запросы?"}
+    ]
+)
+
+print(response.choices[0].message.content)</div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function switchDashTab(tabName) {
+    document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+    document.querySelectorAll('.dash-tab-pane').forEach(p => p.style.display = 'none');
+
+    const menuElem = document.getElementById(`menu-${tabName}`);
+    if (menuElem) menuElem.classList.add('active');
+
+    const tabElem = document.getElementById(`tab-${tabName}`);
+    if (tabElem) tabElem.style.display = 'block';
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function launchInPlayground(slug) {
+    switchDashTab('playground');
+    const sel = document.getElementById('dashPlaygroundModel');
+    if (sel) sel.value = slug;
+}
+
+async function runDashPlayground() {
+    const promptInput = document.getElementById('dashPlaygroundPrompt');
+    const modelSelect = document.getElementById('dashPlaygroundModel');
+    const systemPromptInput = document.getElementById('dashPlaygroundSystemPrompt');
+    const outputElem = document.getElementById('dashPlaygroundOutput');
+    const btn = document.getElementById('btnRunDashPlayground');
+    const metricsTokens = document.getElementById('dashMetricTokens');
+    const metricsCost = document.getElementById('dashMetricCost');
+    const metricsLatency = document.getElementById('dashMetricLatency');
+
+    if (!promptInput || !promptInput.value.trim()) {
+        showToast('Введите текст промпта', 'error');
+        return;
+    }
+
+    const prompt = promptInput.value.trim();
+    const model = modelSelect ? modelSelect.value : 'gpt-4o';
+    const systemPrompt = systemPromptInput ? systemPromptInput.value.trim() : '';
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spin-anim">⏳</span> Выполнение запроса...`;
+    }
+
+    if (outputElem) {
+        outputElem.innerHTML = `<span style="color: #94a3b8;">Отправка в кластер <strong>${model}</strong>...</span>`;
+    }
+
+    try {
+        const res = await fetch('/api/playground/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model: model,
+                prompt: prompt,
+                system_prompt: systemPrompt
+            })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+            if (data.output_type === 'image' && data.image_url) {
+                outputElem.innerHTML = `
+                    <div style="margin-bottom: 12px; color: #34d399; font-weight: 600;">✓ Изображение сгенерировано (${data.model_name}):</div>
+                    <img src="${data.image_url}" alt="AI generated" style="max-width: 100%; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 10px 30px rgba(0,0,0,0.5);"/>
+                    <div style="margin-top: 10px; font-size: 13px; color: #94a3b8;">${escapeHtml(data.text)}</div>
+                `;
+            } else {
+                outputElem.textContent = data.text;
+            }
+
+            if (metricsTokens) metricsTokens.textContent = `${data.usage.total_tokens} ток.`;
+            if (metricsCost) metricsCost.textContent = `${data.usage.cost_rub.toFixed(4)} ₽`;
+            if (metricsLatency) metricsLatency.textContent = `${data.latency_ms} ms`;
+
+            updateBalanceUI(data.new_balance);
+            showToast(`Успешно! Списано: ${data.usage.cost_rub.toFixed(4)} ₽`, 'success');
+        } else if (res.status === 402 || data.insufficient_balance) {
+            outputElem.innerHTML = `<span style="color: #fb7185;">⚠️ ${data.error}</span>`;
+            showToast('Недостаточно средств на балансе', 'error');
+            openTopupModal();
+        } else {
+            outputElem.textContent = `Ошибка: ${data.error || 'Не удалось получить ответ'}`;
+            showToast(data.error || 'Ошибка запроса', 'error');
+        }
+    } catch (e) {
+        outputElem.textContent = 'Ошибка сети';
+        showToast('Ошибка сети', 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg> <span>Отправить запрос</span>`;
+        }
+    }
+}
+</script>
+{% endblock %}
