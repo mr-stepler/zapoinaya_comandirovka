@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block title %}Документация и интеграция API — NeuroAPI{% endblock %}
+
+{% block content %}
+<div class="container" style="padding: 60px 24px 80px;">
+    <div class="section-header">
+        <div class="section-tag">API Документация</div>
+        <h1 class="section-title">Руководство по интеграции NeuroAPI</h1>
+        <p class="section-desc">Быстрый старт, спецификация эндпоинтов, примеры кода для Python, Node.js, Telegram ботов и LangChain</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 260px 1fr; gap: 32px; align-items: flex-start;">
+        <!-- Left TOC -->
+        <div class="card-glass" style="position: sticky; top: 90px; padding: 20px;">
+            <div style="font-size: 13px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 12px;">Разделы</div>
+            <ul style="list-style: none; display: flex; flex-direction: column; gap: 10px; font-size: 14px;">
+                <li><a href="#quickstart" style="color: var(--text-secondary);">🚀 Быстрый старт</a></li>
+                <li><a href="#auth" style="color: var(--text-secondary);">🔑 Авторизация</a></li>
+                <li><a href="#python" style="color: var(--text-secondary);">🐍 Python (OpenAI SDK)</a></li>
+                <li><a href="#nodejs" style="color: var(--text-secondary);">⚡ Node.js & TypeScript</a></li>
+                <li><a href="#telegram" style="color: var(--text-secondary);">🤖 Telegram Бот</a></li>
+                <li><a href="#images" style="color: var(--text-secondary);">🎨 Генерация картинок</a></li>
+                <li><a href="#errors" style="color: var(--text-secondary);">⚠️ Коды ошибок</a></li>
+            </ul>
+        </div>
+
+        <!-- Right Content -->
+        <div style="display: flex; flex-direction: column; gap: 40px;">
+            
+            <!-- Quickstart -->
+            <div id="quickstart" class="card-glass">
+                <h2 style="font-size: 22px; font-weight: 800; margin-bottom: 12px; color: #a5b4fc;">🚀 1. Быстрый старт</h2>
+                <p style="color: var(--text-secondary); font-size: 14px; line-height: 1.6; margin-bottom: 16px;">
+                    Шлюз NeuroAPI на 100% аппаратно и программно совместим с протоколом OpenAI REST API. Чтобы перевести любой существующий проект или библиотеку (LangChain, LlamaIndex, AutoGen, CrewAI, Cursor) на NeuroAPI, достаточно изменить лишь <strong>Base URL</strong> и передать ваш ключ <strong>sk-neuro-...</strong>.
+                </p>
+
+                <div style="background: #080c14; border: 1px solid var(--border-subtle); border-radius: 10px; padding: 14px; font-family: var(--font-mono); font-size: 13px;">
+                    <div><span style="color: #64748b;">Base URL:</span> <strong style="color: #38bdf8;">https://api.neuroapi.io/v1</strong></div>
+                    <div style="margin-top: 4px;"><span style="color: #64748b;">Completions:</span> <strong style="color: #34d399;">https://api.neuroapi.io/v1/chat/completions</strong></div>
+                </div>
+            </div>
+
+            <!-- Auth -->
+            <div id="auth" class="card-glass">
+                <h2 style="font-size: 22px; font-weight: 800; margin-bottom: 12px; color: #a5b4fc;">🔑 2. Авторизация запросов</h2>
+                <p style="color: var(--text-secondary); font-size: 14px; line-height: 1.6; margin-bottom: 16px;">
+                    Все HTTP запросы должны содержать заголовок <code>Authorization: Bearer YOUR_API_KEY</code>.
+                </p>
+
+                <div class="code-showcase" style="margin: 0;">
+                    <div class="code-body">curl https://api.neuroapi.io/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-neuro-98fa72bc91d842" \
+  -d '{
+    "model": "deepseek-chat-v3",
+    "messages": [
+      {"role": "system", "content": "Ты полезный AI помощник."},
+      {"role": "user", "content": "Привет! Назови столицу Франции."}
+    ],
+    "temperature": 0.7
+  }'</div>
+                </div>
+            </div>
+
+            <!-- Python SDK -->
+            <div id="python" class="card-glass">
+                <h2 style="font-size: 22px; font-weight: 800; margin-bottom: 12px; color: #a5b4fc;">🐍 3. Интеграция в Python (OpenAI SDK)</h2>
+                <p style="color: var(--text-secondary); font-size: 14px; line-height: 1.6; margin-bottom: 16px;">
+                    Установите стандартный пакет <code>pip install openai</code> и инициализируйте клиент с указанием шлюза NeuroAPI:
+                </p>
+
+                <div class="code-showcase" style="margin: 0;">
+                    <div class="code-body">import openai
+
+# Инициализируем клиент
+client = openai.OpenAI(
+    api_key="sk-neuro-ВАШ_КЛЮЧ_ИЗ_КАБИНЕТА",
+    base_url="https://api.neuroapi.io/v1"
+)
+
+# Отправляем запрос к DeepSeek V3, Claude 3.5 или GPT-4o
+response = client.chat.completions.create(
+    model="claude-3-5-sonnet", # или deepseek-reasoner-r1, gpt-4o
+    messages=[
+        {"role": "system", "content": "Ты старший Python-разработчик."},
+        {"role": "user", "content": "Напиши FastAPI эндпоинт с валидацией Pydantic."}
+    ],
+    temperature=0.5,
+    max_tokens=1000
+)
+
+# Выводим ответ
+print(response.choices[0].message.content)</div>
+                </div>
+            </div>
+
+            <!-- Telegram Bot -->
+            <div id="telegram" class="card-glass">
+                <h2 style="font-size: 22px; font-weight: 800; margin-bottom: 12px; color: #a5b4fc;">🤖 4. Пример Telegram-бота на aiogram 3.x</h2>
+                <p style="color: var(--text-secondary); font-size: 14px; line-height: 1.6; margin-bottom: 16px;">
+                    Готовый шаблон Telegram-бота, отвечающего на любые сообщения через нейросеть DeepSeek / GPT-4o:
+                </p>
+
+                <div class="code-showcase" style="margin: 0;">
+                    <div class="code-body">import asyncio
+import openai
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import CommandStart
+
+TELEGRAM_TOKEN = "ВАШ_ТОКЕН_БОТА_ИЗ_BOTFATHER"
+NEURO_API_KEY = "sk-neuro-ВАШ_КЛЮЧ_NEUROAPI"
+
+bot = Bot(token=TELEGRAM_TOKEN)
+dp = Dispatcher()
+
+ai_client = openai.AsyncOpenAI(
+    api_key=NEURO_API_KEY,
+    base_url="https://api.neuroapi.io/v1"
+)
+
+@dp.message(CommandStart())
+async def cmd_start(message: types.Message):
+    await message.answer("Привет! Я AI-ассистент на базе NeuroAPI. Задайте мне любой вопрос!")
+
+@dp.message()
+async def handle_ai_message(message: types.Message):
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    try:
+        response = await ai_client.chat.completions.create(
+            model="deepseek-chat-v3",
+            messages=[{"role": "user", "content": message.text}]
+        )
+        await message.answer(response.choices[0].message.content)
+    except Exception as e:
+        await message.answer(f"Ошибка вызова AI: {str(e)}")
+
+async def main():
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())</div>
+                </div>
+            </div>
+
+            <!-- Error Codes -->
+            <div id="errors" class="card-glass">
+                <h2 style="font-size: 22px; font-weight: 800; margin-bottom: 12px; color: #a5b4fc;">⚠️ 5. Коды ошибок API</h2>
+                <div class="table-responsive">
+                    <table class="custom-table">
+                        <thead>
+                            <tr>
+                                <th>Код HTTP</th>
+                                <th>Название</th>
+                                <th>Причина и решение</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td style="color: #34d399; font-weight: 700;">200 OK</td>
+                                <td>Success</td>
+                                <td>Запрос успешно обработан, ответ сформирован.</td>
+                            </tr>
+                            <tr>
+                                <td style="color: #fb7185; font-weight: 700;">401 Unauthorized</td>
+                                <td>Invalid API Key</td>
+                                <td>Неверный или отозванный ключ. Проверьте заголовок Authorization.</td>
+                            </tr>
+                            <tr>
+                                <td style="color: #fb7185; font-weight: 700;">402 Insufficient Quota</td>
+                                <td>No Balance</td>
+                                <td>На балансе недостаточно средств. Пополните баланс в кабинете.</td>
+                            </tr>
+                            <tr>
+                                <td style="color: #fbbf24; font-weight: 700;">429 Too Many Requests</td>
+                                <td>Rate Limit Exceeded</td>
+                                <td>Превышен лимит запросов в минуту (RPM). Увеличьте интервал.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}

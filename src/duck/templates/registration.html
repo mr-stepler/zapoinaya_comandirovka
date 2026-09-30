@@ -1,120 +1,59 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Регистрация</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f0f2f5;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
+{% extends "base.html" %}
 
-        .card {
-            background-color: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            width: 100%;
-            max-width: 350px;
-        }
+{% block title %}Регистрация — NeuroAPI (+150 ₽ на баланс){% endblock %}
 
-        .card h2 {
-            text-align: center;
-            margin-bottom: 20px;
-            color: #333;
-        }
+{% block content %}
+<div class="auth-page-wrapper">
+    <div class="auth-card" style="max-width: 480px;">
+        <div class="auth-card-header">
+            <div class="logo-icon" style="margin: 0 auto 16px; width: 44px; height: 44px; font-size: 20px;">⚡</div>
+            <h1 class="auth-card-title">Создание аккаунта</h1>
+            <p class="auth-card-subtitle">Получите мгновенный доступ ко всем мировым нейросетям</p>
+        </div>
 
-        .form-group {
-            margin-bottom: 15px;
-        }
+        <div class="auth-bonus-badge">
+            <span>🎁</span>
+            <span><strong>+150 ₽ в подарок</strong> на ваш баланс при регистрации!</span>
+        </div>
 
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            color: #666;
-        }
-
-        .form-group input {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            box-sizing: border-box;
-        }
-
-        button {
-            width: 100%;
-            padding: 10px;
-            background-color: #28a745;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: background 0.3s;
-            margin-top: 10px;
-        }
-
-        button:hover {
-            background-color: #218838;
-        }
-
-        .switch-link {
-            text-align: center;
-            margin-top: 15px;
-            font-size: 14px;
-        }
-
-        .switch-link a {
-            color: #007bff;
-            text-decoration: none;
-        }
-
-        .switch-link a:hover {
-            text-decoration: underline;
-        }
-    </style>
-</head>
-<body>
-
-    <div class="card">
-        <h2>Регистрация</h2>
-        <form action="/user_register" method="post" id="67">
+        <form action="/user_register" method="post" id="auth-form">
             <div class="form-group">
-                <label for="fullname">Ваше имя</label>
-                <input type="text" id="fullname" name="fullname" placeholder="Иван Иванов" required>
+                <label for="fullname" class="form-label">Ваше имя / Компания</label>
+                <input type="text" id="fullname" name="fullname" class="form-control" placeholder="Александр Смирнов" required autocomplete="name">
             </div>
 
             <div class="form-group">
-                <label for="email">Email</label>
-                <input type="email" id="email" name="email" placeholder="example@mail.ru" required>
+                <label for="email" class="form-label">Рабочий Email</label>
+                <input type="email" id="email" name="email" class="form-control" placeholder="developer@company.ru" required autocomplete="email">
             </div>
 
             <div class="form-group">
-                <label for="password">Пароль</label>
-                <input type="password" id="password" name="password" placeholder="Придумайте пароль" required>
+                <label for="password" class="form-label">Придумайте пароль</label>
+                <input type="password" id="password" name="password" class="form-control" placeholder="Минимум 4 символа" required autocomplete="new-password">
             </div>
 
             <div class="form-group">
-                <label for="confirm_password">Повторите пароль</label>
-                <input type="password" id="confirm_password" name="confirm_password" placeholder="Повторите пароль" required>
+                <label for="confirm_password" class="form-label">Повторите пароль</label>
+                <input type="password" id="confirm_password" name="confirm_password" class="form-control" placeholder="Повторите пароль" required autocomplete="new-password">
             </div>
 
-            <button type="submit">Зарегистрироваться</button>
+            <div class="form-group">
+                <label for="promo_code" class="form-label">Промокод на скидку или бонус (опционально)</label>
+                <input type="text" id="promo_code" name="promo_code" class="form-control" placeholder="Например: NEURO2026" style="text-transform: uppercase;">
+            </div>
+
+            <button type="submit" class="btn btn-success btn-block btn-lg" style="margin-top: 10px;">
+                Зарегистрироваться и получить 150 ₽
+            </button>
         </form>
 
-        <div class="switch-link">
-            Уже есть аккаунт? <a href="/login">Войти</a>
+        <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-subtle); font-size: 14px; color: var(--text-secondary);">
+            Уже есть аккаунт? <a href="/login" style="font-weight: 600; color: #a5b4fc;">Войти в систему</a>
         </div>
     </div>
+</div>
+{% endblock %}
 
-</body>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.js" integrity="sha512-+k1pnlgt4F1H8L7t3z95o3/KO+o78INEcXTbnoJQ/F2VqDVhWoaiVml/OEHv9HsVgxUaVW+IbiZPUJQfF/YxZw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="../static/script.js"></script>
-</html>
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+{% endblock %}
