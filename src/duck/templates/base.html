@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}NeuroAPI — Единый шлюз API для всех нейросетей{% endblock %}</title>
+    <!-- Fonts -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+    </style>
+    
+    <!-- CSS Styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+    <!-- Sticky Navbar -->
+    <nav class="navbar">
+        <div class="container navbar-container">
+            <a href="/" class="brand-logo">
+                <div class="logo-icon">⚡</div>
+                <span>Neuro<span style="color: #6366f1;">API</span></span>
+            </a>
+
+            <ul class="nav-links">
+                <li><a href="/#models" class="nav-link">Каталог моделей</a></li>
+                <li><a href="/pricing" class="nav-link">Тарифы</a></li>
+                <li><a href="/#playground-preview" class="nav-link">Песочница</a></li>
+                <li><a href="/docs" class="nav-link">Документация</a></li>
+            </ul>
+
+            <div class="nav-actions">
+                {% if current_user %}
+                    <!-- User Balance Pill -->
+                    <div class="balance-pill" onclick="openTopupModal()" title="Нажмите для пополнения">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2.5"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+                        <span class="user-balance-value balance-amount">{{ "%.2f"|format(current_user.balance) }} ₽</span>
+                        <span class="btn-topup-mini">+ Пополнить</span>
+                    </div>
+
+                    <!-- User Menu Button -->
+                    <a href="/dashboard" class="btn btn-secondary btn-sm" style="display: flex; align-items: center; gap: 8px;">
+                        <span style="width: 20px; height: 20px; border-radius: 50%; background: {{ current_user.avatar_color or '#6366f1' }}; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; color: white;">{{ current_user.username[:1].upper() }}</span>
+                        <span>{{ current_user.username }}</span>
+                    </a>
+                    <a href="/logout" class="btn btn-outline btn-sm" title="Выйти из аккаунта">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                    </a>
+                {% else %}
+                    <a href="/login" class="btn btn-outline btn-sm">Вход</a>
+                    <a href="/registration" class="btn btn-primary btn-sm" style="display: flex; align-items: center; gap: 6px;">
+                        <span>Регистрация</span>
+                        <span style="background: rgba(255,255,255,0.2); padding: 1px 6px; border-radius: 10px; font-size: 11px;">+150 ₽</span>
+                    </a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Top-up Modal -->
+    <div class="modal-overlay" id="topupModal">
+        <div class="modal-card">
+            <button class="modal-close" onclick="closeTopupModal()">✕</button>
+            
+            <div style="text-align: center; margin-bottom: 24px;">
+                <div style="width: 52px; height: 52px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 14px; margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; color: #34d399;">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+                </div>
+                <h3 style="font-size: 22px; font-weight: 800; margin-bottom: 6px;">Пополнение баланса</h3>
+                <p style="font-size: 13px; color: var(--text-secondary);">Мгновенное зачисление средств для вызова любых AI-моделей</p>
+            </div>
+
+            <!-- Amount Presets -->
+            <label class="form-label">Выберите сумму пополнения:</label>
+            <div class="presets-grid">
+                <div class="preset-chip" onclick="selectPreset(300, this)">
+                    <div class="preset-amount">300 ₽</div>
+                </div>
+                <div class="preset-chip" onclick="selectPreset(500, this)">
+                    <div class="preset-amount">500 ₽</div>
+                </div>
+                <div class="preset-chip selected" onclick="selectPreset(1000, this)">
+                    <div class="preset-amount">1 000 ₽</div>
+                </div>
+                <div class="preset-chip" onclick="selectPreset(2500, this)">
+                    <div class="preset-amount">2 500 ₽</div>
+                    <div class="preset-bonus">+5% бонус</div>
+                </div>
+                <div class="preset-chip" onclick="selectPreset(5000, this)">
+                    <div class="preset-amount">5 000 ₽</div>
+                    <div class="preset-bonus">+10% бонус</div>
+                </div>
+                <div class="preset-chip" onclick="selectPreset(10000, this)">
+                    <div class="preset-amount">10 000 ₽</div>
+                    <div class="preset-bonus">+15% бонус</div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Или укажите свою сумму (₽):</label>
+                <input type="number" id="customAmountInput" class="form-control" placeholder="1000" min="50" max="500000" value="1000" oninput="onCustomAmountChange(this.value)">
+            </div>
+
+            <!-- Payment Methods -->
+            <label class="form-label">Способ оплаты:</label>
+            <div class="payment-methods-grid">
+                <div class="pm-card selected" onclick="selectPaymentMethod('sbp', this)">
+                    <div style="font-size: 20px;">📱</div>
+                    <div class="pm-title">СБП (QR-код)</div>
+                    <div class="pm-sub">0% комиссии • 1 сек</div>
+                </div>
+                <div class="pm-card" onclick="selectPaymentMethod('card', this)">
+                    <div style="font-size: 20px;">💳</div>
+                    <div class="pm-title">Банковская карта</div>
+                    <div class="pm-sub">МИР, Visa, Mastercard</div>
+                </div>
+                <div class="pm-card" onclick="selectPaymentMethod('crypto', this)">
+                    <div style="font-size: 20px;">🪙</div>
+                    <div class="pm-title">Криптовалюта</div>
+                    <div class="pm-sub">USDT (TRC20), TON, BTC</div>
+                </div>
+                <div class="pm-card" onclick="selectPaymentMethod('yoomoney', this)">
+                    <div style="font-size: 20px;">🟣</div>
+                    <div class="pm-title">ЮMoney / Sber</div>
+                    <div class="pm-sub">Электронные кошельки</div>
+                </div>
+            </div>
+
+            <!-- Summary Box -->
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 13px; color: var(--text-secondary);">К зачислению на баланс:</span>
+                <div style="text-align: right;">
+                    <div id="topupSummaryTotal" style="font-size: 20px; font-weight: 800; color: #34d399;">1 000 ₽</div>
+                    <div id="topupSummaryBonus" style="font-size: 11px; font-weight: 700; color: #38bdf8; display: none;"></div>
+                </div>
+            </div>
+
+            <button type="button" class="btn btn-success btn-block btn-lg" id="btnSubmitTopup" onclick="executeTopup()">
+                Перейти к оплате
+            </button>
+            <p style="text-align: center; font-size: 11px; color: var(--text-muted); margin-top: 12px;">🔒 Безопасный шлюз с шифрованием данных по протоколу TLS 1.3</p>
+        </div>
+    </div>
+
+    <!-- Create API Key Modal -->
+    <div class="modal-overlay" id="createKeyModal">
+        <div class="modal-card">
+            <button class="modal-close" onclick="closeCreateKeyModal()">✕</button>
+            <h3 style="font-size: 20px; font-weight: 800; margin-bottom: 8px;">Создание нового API ключа</h3>
+            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 20px;">Ключ используется для авторизации ваших приложений и скриптов в NeuroAPI</p>
+
+            <div class="form-group">
+                <label class="form-label">Название ключа (для чего используется)</label>
+                <input type="text" id="keyNameInput" class="form-control" placeholder="Например: Telegram-бот или Production Server">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">Лимит расходов (₽, 0 = без ограничений)</label>
+                <input type="number" id="keyLimitInput" class="form-control" placeholder="0" min="0">
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-top: 24px;">
+                <button type="button" class="btn btn-outline" style="flex: 1;" onclick="closeCreateKeyModal()">Отмена</button>
+                <button type="button" class="btn btn-primary" style="flex: 2;" onclick="submitCreateKey()">Сгенерировать ключ</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Key Created Success Modal -->
+    <div class="modal-overlay" id="keyCreatedModal">
+        <div class="modal-card">
+            <div style="text-align: center; margin-bottom: 16px;">
+                <div style="width: 50px; height: 50px; background: rgba(16, 185, 129, 0.15); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; color: #10b981; font-size: 24px;">✓</div>
+                <h3 style="font-size: 20px; font-weight: 800; margin-bottom: 4px;">Ключ успешно создан!</h3>
+                <p style="font-size: 13px; color: #fb7185; font-weight: 600;">Скопируйте и сохраните ключ сейчас. Из соображений безопасности он больше не будет показан!</p>
+            </div>
+
+            <div style="background: #080c14; border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; padding: 14px; margin-bottom: 20px;">
+                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;" id="newKeyNameLabel">Основной ключ</div>
+                <div id="newRawKeyValue" style="font-family: var(--font-mono); font-size: 13px; color: #38bdf8; word-break: break-all;">sk-neuro-sample</div>
+            </div>
+
+            <button type="button" class="btn btn-success btn-block" onclick="copyToClipboard(document.getElementById('newRawKeyValue').textContent, 'API ключ скопирован в буфер!')">
+                📋 Скопировать ключ в буфер
+            </button>
+            <button type="button" class="btn btn-outline btn-block" style="margin-top: 10px;" onclick="closeKeyCreatedModal()">
+                Я сохранил ключ, закрыть
+            </button>
+        </div>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container footer-container">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div class="logo-icon" style="width: 28px; height: 28px; font-size: 14px;">⚡</div>
+                <div>
+                    <div style="font-weight: 700; color: var(--text-primary);">NeuroAPI Platform</div>
+                    <div style="font-size: 12px;">Единый API шлюз для ведущих мировых нейросетей</div>
+                </div>
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #34d399;">
+                <span style="width: 8px; height: 8px; background: #34d399; border-radius: 50%; box-shadow: 0 0 8px #34d399;"></span>
+                <span>Все системы и API кластеры работают в штатном режиме (99.98% Uptime)</span>
+            </div>
+
+            <ul class="footer-links">
+                <li><a href="/#models">Модели</a></li>
+                <li><a href="/pricing">Тарифы</a></li>
+                <li><a href="/docs">API Документация</a></li>
+                <li><a href="/dashboard">Личный кабинет</a></li>
+            </ul>
+        </div>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

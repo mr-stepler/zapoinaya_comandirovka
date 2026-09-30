@@ -1,106 +1,49 @@
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Страница авторизации</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f0f2f5;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
+{% extends "base.html" %}
 
-        .login-card {
-            background-color: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            width: 100%;
-            max-width: 350px;
-        }
+{% block title %}Вход в систему — NeuroAPI{% endblock %}
 
-        .login-card h2 {
-            text-align: center;
-            margin-bottom: 20px;
-            color: #333;
-        }
+{% block content %}
+<div class="auth-page-wrapper">
+    <div class="auth-card">
+        <div class="auth-card-header">
+            <div class="logo-icon" style="margin: 0 auto 16px; width: 44px; height: 44px; font-size: 20px;">⚡</div>
+            <h1 class="auth-card-title">Вход в NeuroAPI</h1>
+            <p class="auth-card-subtitle">Войдите в личный кабинет для управления API ключами и балансом</p>
+        </div>
 
-        .form-group {
-            margin-bottom: 15px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            color: #666;
-        }
-
-        .form-group input {
-            width: 100%;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            box-sizing: border-box;
-        }
-
-        button {
-            width: 100%;
-            padding: 10px;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: background 0.3s;
-        }
-
-        button:hover {
-            background-color: #0056b3;
-        }
-
-        .switch-link {
-            text-align: center;
-            margin-top: 15px;
-            font-size: 14px;
-        }
-
-        .switch-link a {
-            color: #007bff;
-            text-decoration: none;
-        }
-
-        .switch-link a:hover {
-            text-decoration: underline;
-        }
-    </style>
-</head>
-<body>
-
-    <div class="login-card">
-        <h2>Вход в систему</h2>
-        <form action="#" method="post" id="67">
+        <form action="/user_login" method="post" id="auth-form">
             <div class="form-group">
-                <label for="email">Логин или Email</label>
-                <input type="text" id="email" name="email" placeholder="Введите логин или email" required>
+                <label for="email" class="form-label">Email / Логин</label>
+                <input type="email" id="email" name="email" class="form-control" placeholder="developer@example.com" required autocomplete="email">
             </div>
+
             <div class="form-group">
-                <label for="password">Пароль</label>
-                <input type="password" id="password" name="password" placeholder="Введите пароль" required>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <label for="password" class="form-label" style="margin-bottom: 0;">Пароль</label>
+                    <a href="javascript:void(0)" onclick="fillDemoCredentials()" style="font-size: 12px; color: #38bdf8;">Заполнить демо-вход</a>
+                </div>
+                <input type="password" id="password" name="password" class="form-control" placeholder="Введите ваш пароль" required autocomplete="current-password">
             </div>
-            <button type="submit">Войти</button>
+
+            <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top: 10px;">
+                Войти в аккаунт
+            </button>
         </form>
-        <div class="switch-link">
-            <a href="/">Зарегистрироваться</a>
+
+        <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-subtle); font-size: 14px; color: var(--text-secondary);">
+            Еще нет аккаунта? <a href="/registration" style="font-weight: 600; color: #a5b4fc;">Зарегистрироваться (+150 ₽ бонус)</a>
         </div>
     </div>
+</div>
+{% endblock %}
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.js" integrity="sha512-+k1pnlgt4F1H8L7t3z95o3/KO+o78INEcXTbnoJQ/F2VqDVhWoaiVml/OEHv9HsVgxUaVW+IbiZPUJQfF/YxZw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-    <script src="../static/script.js"></script>
-</body>
-</html>
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+<script>
+function fillDemoCredentials() {
+    document.getElementById('email').value = 'demo@neuroapi.io';
+    document.getElementById('password').value = 'demo123';
+    showToast('Демо-данные заполнены! Нажмите «Войти»', 'success');
+}
+</script>
+{% endblock %}
